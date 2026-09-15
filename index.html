@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B2A33">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Ажлын зардал</title>
+<style>
+:root{
+  --bg:#E9ECE8; --surface:#fff; --ink:#1B2A33; --muted:#6C7A80;
+  --line:#D5DBD5; --good:#2F6B4F; --bad:#B33A2B; --blue:#2A5F7A; --track:#DCE2DC;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+  font-variant-numeric:tabular-nums;
+  padding-top:env(safe-area-inset-top);
+  -webkit-tap-highlight-color:transparent;
+}
+#app{max-width:560px;margin:0 auto;padding:20px 16px 70px}
+button{font-family:inherit}
+input{
+  width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);font-size:16px;outline:none;font-family:inherit
+}
+input:focus{border-color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px}
+.hero{background:var(--ink);color:#fff;border-radius:14px;padding:18px 16px;margin-bottom:20px}
+.pairs{display:flex;gap:14px;margin-top:12px}
+.pair{flex:1;padding:10px 12px;border-radius:9px;background:#F2F5F1}
+.hero .pair{background:rgba(255,255,255,.08)}
+.plabel{font-size:11.5px;color:var(--muted);margin-bottom:3px;line-height:1.3}
+.hero .plabel{color:rgba(255,255,255,.6)}
+.pval{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.hero .pos{color:#8FD3AE} .hero .neg{color:#F08A7A}
+.meta{display:flex;gap:20px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;flex-wrap:wrap}
+.hero .meta{border-top-color:rgba(255,255,255,.15)}
+.mlabel{font-size:11.5px;color:var(--muted)} .hero .mlabel{color:rgba(255,255,255,.55)}
+.mval{font-weight:600}
+.jobcard{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:16px;margin-bottom:10px;cursor:pointer;color:inherit;font-size:inherit}
+.jobcard:active{background:#F7F9F6}
+.jname{font-size:17px;font-weight:600}
+.bar{height:5px;background:var(--track);border-radius:3px;margin:12px 0 8px;overflow:hidden}
+.bar>i{display:block;height:100%}
+.sub{font-size:12.5px;color:var(--muted)}
+.btn{padding:11px 16px;border-radius:8px;border:none;background:var(--ink);color:#fff;
+  font-size:15px;font-weight:600;cursor:pointer;width:100%}
+.btn.blue{background:var(--blue)}
+.btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);width:auto}
+.link{background:none;border:none;color:var(--muted);font-size:15px;padding:4px 0 14px;cursor:pointer}
+.danger{background:none;border:none;color:var(--bad);font-size:14px;margin-top:20px;cursor:pointer}
+.tabs{display:flex;background:#EDF0EC;border-radius:8px;padding:3px;margin-bottom:12px}
+.tabs button{flex:1;padding:8px 0;border-radius:6px;border:none;background:transparent;color:var(--muted);
+  font-size:14.5px;font-weight:600;cursor:pointer}
+.tabs button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);
+  border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.row.exp{border-left:3px solid var(--bad)} .row.inc{border-left:3px solid var(--blue)}
+.rdesc{font-size:15px;font-weight:500} .rdate{font-size:12px;color:var(--muted);margin-top:2px}
+.ramt{font-weight:600;white-space:nowrap}
+.x{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px 6px}
+.empty{background:var(--surface);border-radius:12px;padding:28px 20px;text-align:center;color:var(--muted);margin-bottom:14px}
+.note{color:var(--muted);font-size:14px;padding:6px 2px}
+.tools{display:flex;gap:8px;margin-top:26px;justify-content:center}
+.tools button{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline}
+.h2{display:flex;gap:8px;align-items:center;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const KEY = 'ajliin-zardal-v1';
+let jobs = [];
+let openId = null, tab = 'exp', newJob = false, editContract = false;
+
+const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
+const today = () => new Date().toISOString().slice(0,10);
+const uid = () => Math.random().toString(36).slice(2,10);
+const num = v => parseFloat(String(v).replace(/[^0-9.\-]/g,''));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function load(){
+  try{ const raw = localStorage.getItem(KEY); if(raw) jobs = JSON.parse(raw); }catch(e){ jobs = []; }
+  jobs = jobs.map(j => ({...j, contract: j.contract ?? j.budget ?? 0, incomes: j.incomes||[], expenses: j.expenses||[]}));
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(jobs)); }catch(e){ alert('Хадгалж чадсангүй. Хөтчийн санах ой дүүрсэн байж болно.'); } }
+
+const sum = a => a.reduce((s,e)=>s+e.amount,0);
+const spent = j => sum(j.expenses);
+const earned = j => sum(j.incomes);
+
+function pair(label, value, hero){
+  const cls = value < 0 ? 'neg' : 'pos';
+  return '<div class="pair"><div class="plabel">'+label+'</div><div class="pval '+cls+'">'+fmt(value)+'</div></div>';
+}
+
+function render(){
+  const app = document.getElementById('app');
+  const job = jobs.find(j=>j.id===openId);
+  if(!job) app.innerHTML = listView(); else app.innerHTML = detailView(job);
+}
+
+function listView(){
+  const tC = jobs.reduce((s,j)=>s+j.contract,0);
+  const tS = jobs.reduce((s,j)=>s+spent(j),0);
+  const tE = jobs.reduce((s,j)=>s+earned(j),0);
+  let h = '<div class="hero"><div style="font-size:13px;opacity:.6">Бүх ажлын нэгдсэн дүн</div>'
+    + '<div class="pairs">' + pair('Гэрээнээс гарах ашиг', tC-tS) + pair('Орлогоос гарсан баланс', tE-tS) + '</div>'
+    + '<div class="meta">'
+    + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(tC)+'</div></div>'
+    + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(tE)+'</div></div>'
+    + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(tS)+'</div></div>'
+    + '</div></div>';
+
+  if(jobs.length===0 && !newJob) h += '<div class="empty">Эхний ажлаа үүсгээд гэрээний дүнгээ оруулна уу.</div>';
+
+  jobs.forEach(j=>{
+    const s = spent(j), cb = j.contract - s, ib = earned(j) - s;
+    const pct = j.contract>0 ? Math.min(s/j.contract*100,100) : 0;
+    h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
+      + '<div class="jname">'+esc(j.name)+'</div>'
+      + '<div class="pairs">'+pair('Гэрээний баланс',cb)+pair('Орлогын баланс',ib)+'</div>'
+      + '<div class="bar"><i style="width:'+pct+'%;background:'+(cb<0?'var(--bad)':'var(--good)')+'"></i></div>'
+      + '<div class="sub">Гэрээ '+fmt(j.contract)+' · Орлого '+fmt(earned(j))+' · Зардал '+fmt(s)+'</div>'
+      + '</button>';
+  });
+
+  if(newJob){
+    h += '<div class="card">'
+      + '<input id="nName" placeholder="Ажлын нэр" style="margin-bottom:10px">'
+      + '<input id="nContract" placeholder="Гэрээний дүн (₮)" inputmode="numeric" style="margin-bottom:12px">'
+      + '<div style="display:flex;gap:8px"><button class="btn" onclick="addJob()">Ажил үүсгэх</button>'
+      + '<button class="btn ghost" onclick="newJob=false;render()">Болих</button></div></div>';
+  } else {
+    h += '<button class="btn" style="margin-top:6px" onclick="newJob=true;render()">+ Шинэ ажил</button>';
+  }
+
+  h += '<div class="tools"><button onclick="exportData()">Өгөгдөл хуулах</button>'
+     + '<button onclick="importData()">Сэргээх</button></div>';
+  return h;
+}
+
+function detailView(j){
+  const s = spent(j), e = earned(j);
+  let h = '<button class="link" onclick="openId=null;editContract=false;render()">← Бүх ажил</button>'
+    + '<div class="card" style="border-radius:14px;padding:18px;margin-bottom:18px">'
+    + '<div style="font-size:20px;font-weight:600">'+esc(j.name)+'</div>'
+    + '<div class="pairs">'+pair('Гэрээний дүнгээс гарсан баланс', j.contract-s)+pair('Орлогоос гарсан баланс', e-s)+'</div>'
+    + '<div class="meta"><div><div class="mlabel">Гэрээний дүн</div>';
+  if(editContract){
+    h += '<div class="h2"><input id="cEdit" inputmode="numeric" value="'+j.contract+'" style="width:130px;padding:7px 9px;font-size:15px">'
+       + '<button class="btn" style="width:auto;padding:7px 12px;font-size:14px" onclick="saveContract()">OK</button></div>';
+  } else {
+    h += '<div class="mval" style="cursor:pointer" onclick="editContract=true;render()">'+fmt(j.contract)
+       + ' <span style="color:var(--muted);font-size:12px;font-weight:400">засах</span></div>';
+  }
+  h += '</div><div><div class="mlabel">Орсон орлого</div><div class="mval">'+fmt(e)+'</div></div>'
+    + '<div><div class="mlabel">Нийт зардал</div><div class="mval">'+fmt(s)+'</div></div></div></div>';
+
+  h += '<div class="card" style="margin-bottom:18px">'
+    + '<div class="tabs"><button class="'+(tab==='exp'?'on':'')+'" onclick="tab=\'exp\';render()">Зардал</button>'
+    + '<button class="'+(tab==='inc'?'on':'')+'" onclick="tab=\'inc\';render()">Орлого</button></div>'
+    + '<input id="eDesc" placeholder="'+(tab==='exp'?'Юунд зарцуулав':'Ямар төлбөр орсон')+'" style="margin-bottom:8px">'
+    + '<div style="display:flex;gap:8px;margin-bottom:10px">'
+    + '<input id="eAmt" placeholder="Дүн (₮)" inputmode="numeric">'
+    + '<input id="eDate" type="date" value="'+today()+'"></div>'
+    + '<button class="btn '+(tab==='inc'?'blue':'')+'" onclick="addEntry()">'
+    + (tab==='exp'?'Зардал нэмэх':'Орлого нэмэх')+'</button></div>';
+
+  const list = (tab==='exp'? j.expenses : j.incomes).slice().sort((a,b)=> a.date<b.date?1:-1);
+  if(list.length===0){
+    h += '<div class="note">'+(tab==='exp'?'Одоогоор зардал бүртгээгүй байна.':'Одоогоор орлого бүртгээгүй байна.')+'</div>';
+  } else {
+    list.forEach(it=>{
+      h += '<div class="row '+tab+'"><div style="min-width:0"><div class="rdesc">'+esc(it.desc)+'</div>'
+        + '<div class="rdate">'+it.date+'</div></div>'
+        + '<div style="display:flex;align-items:center;gap:8px">'
+        + '<span class="ramt">'+(tab==='exp'?'−':'+')+fmt(it.amount)+'</span>'
+        + '<button class="x" onclick="delEntry(\''+it.id+'\')">×</button></div></div>';
+    });
+  }
+  h += '<button class="danger" onclick="delJob()">Энэ ажлыг устгах</button>';
+  return h;
+}
+
+function openJob(id){ openId=id; tab='exp'; editContract=false; render(); }
+
+function addJob(){
+  const name = document.getElementById('nName').value.trim();
+  const c = num(document.getElementById('nContract').value);
+  if(!name || !(c>0)){ alert('Ажлын нэр болон гэрээний дүнг оруулна уу.'); return; }
+  jobs.push({id:uid(), name, contract:c, incomes:[], expenses:[]});
+  newJob=false; save(); render();
+}
+
+function addEntry(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const a = num(document.getElementById('eAmt').value);
+  if(!(a>0)){ alert('Дүнг оруулна уу.'); return; }
+  const entry = {
+    id: uid(),
+    desc: document.getElementById('eDesc').value.trim() || (tab==='exp'?'Зардал':'Орлого'),
+    amount: a,
+    date: document.getElementById('eDate').value || today()
+  };
+  (tab==='exp'? j.expenses : j.incomes).push(entry);
+  save(); render();
+}
+
+function delEntry(eid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  if(tab==='exp') j.expenses = j.expenses.filter(e=>e.id!==eid);
+  else j.incomes = j.incomes.filter(e=>e.id!==eid);
+  save(); render();
+}
+
+function saveContract(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const c = num(document.getElementById('cEdit').value);
+  if(c>=0) j.contract = c;
+  editContract=false; save(); render();
+}
+
+function delJob(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  if(!confirm('"'+j.name+'" ажлыг бүх бичилттэй нь устгах уу?')) return;
+  jobs = jobs.filter(x=>x.id!==openId); openId=null; save(); render();
+}
+
+function exportData(){
+  const txt = JSON.stringify(jobs);
+  navigator.clipboard.writeText(txt).then(
+    ()=>alert('Өгөгдөл хуулагдлаа. Тэмдэглэлдээ хадгалаад хэрэгтэй үед "Сэргээх" дээр буулгана.'),
+    ()=>prompt('Доорх текстийг хуулж аваарай:', txt)
+  );
+}
+
+function importData(){
+  const txt = prompt('Өмнө хуулсан өгөгдлөө энд буулгана уу:');
+  if(!txt) return;
+  try{
+    const d = JSON.parse(txt);
+    if(!Array.isArray(d)) throw 0;
+    jobs = d.map(j=>({...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], expenses:j.expenses||[]}));
+    save(); render();
+  }catch(e){ alert('Өгөгдөл буруу байна.'); }
+}
+
+load(); render();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
