@@ -91,6 +91,11 @@ input:focus{border-color:var(--ink)}
 .off{opacity:.55}
 .off .rdesc{text-decoration:line-through}
 .secttl{font-size:13px;color:var(--muted);margin:22px 0 8px;font-weight:600}
+.chartbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:14px 6px 10px;margin-bottom:18px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.chartttl{font-size:13px;color:var(--muted);font-weight:600;padding:0 10px 2px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);padding:8px 10px 0}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
 .navbtn{display:flex;justify-content:space-between;align-items:center;width:100%;
   background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
   margin-bottom:10px;cursor:pointer;font-size:15px;font-weight:600;color:inherit}
@@ -167,6 +172,10 @@ function listView(){
     + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(tA)+'</div></div>'
     + '</div></div>';
 
+  const allInc = [], allExp = [];
+  jobs.forEach(j=>{ allInc.push(...j.incomes); allExp.push(...j.expenses); });
+  h += chartSvg({incomes: allInc, expenses: allExp});
+
   h += '<button class="navbtn" onclick="view=\'assets\';render()">'
      + '<span>Үндсэн хөрөнгө</span><span style="color:var(--asset)">'+fmt(tA)+' ›</span></button>';
 
@@ -207,6 +216,58 @@ function listView(){
   return h;
 }
 
+function chartSvg(j){
+  const map = {};
+  j.incomes.forEach(e => { (map[e.date] = map[e.date] || {i:0,x:0}).i += e.amount; });
+  j.expenses.forEach(e => { (map[e.date] = map[e.date] || {i:0,x:0}).x += e.amount; });
+  const days = Object.keys(map).sort();
+  if(days.length === 0) return '';
+
+  let run = 0;
+  const pts = days.map(d => { run += map[d].i - map[d].x; return {d, v: run, day: map[d]}; });
+
+  const H = 132, TOP = 22, BOT = 34, STEP = 52;
+  const width = Math.max(pts.length * STEP + 30, 300);
+  const hi = Math.max(0, ...pts.map(p=>p.v));
+  const lo = Math.min(0, ...pts.map(p=>p.v));
+  const span = (hi - lo) || 1;
+  const y = v => TOP + H - (v - lo) / span * H;
+  const x = k => 22 + k * STEP;
+  const zero = y(0);
+
+  let poly = pts.map((p,k)=> x(k)+','+y(p.v)).join(' ');
+  const areaUp = 'M'+x(0)+','+zero+' L'+poly.split(' ').join(' L')+' L'+x(pts.length-1)+','+zero+' Z';
+
+  let dots = '', labels = '';
+  pts.forEach((p,k)=>{
+    const py = y(p.v);
+    dots += '<circle cx="'+x(k)+'" cy="'+py+'" r="3.5" fill="'+(p.v<0?'#B33A2B':'#2F6B4F')+'"></circle>';
+    labels += '<text x="'+x(k)+'" y="'+(TOP+H+16)+'" font-size="10" fill="#6C7A80" text-anchor="middle">'
+      + p.d.slice(5).replace('-','/') + '</text>';
+    const flow = p.day.i - p.day.x;
+    labels += '<text x="'+x(k)+'" y="'+(TOP+H+29)+'" font-size="9.5" text-anchor="middle" fill="'
+      + (flow<0?'#B33A2B':'#2A5F7A')+'">'+(flow>0?'+':'')+group(Math.round(flow/1000))+'к</text>';
+  });
+
+  const last = pts[pts.length-1].v;
+  return '<div class="chartbox"><div class="chartttl">Мөнгөн урсгал (хуримтлагдсан)'
+    + '<span style="float:right;color:'+(last<0?'#B33A2B':'#2F6B4F')+'">'+fmt(last)+'</span></div>'
+    + '<svg width="'+width+'" height="'+(TOP+H+BOT)+'" viewBox="0 0 '+width+' '+(TOP+H+BOT)+'">'
+    + '<defs>'
+    + '<clipPath id="up"><rect x="0" y="0" width="'+width+'" height="'+zero+'"></rect></clipPath>'
+    + '<clipPath id="dn"><rect x="0" y="'+zero+'" width="'+width+'" height="'+(TOP+H-zero+2)+'"></rect></clipPath>'
+    + '</defs>'
+    + '<path d="'+areaUp+'" fill="#2F6B4F" opacity=".14" clip-path="url(#up)"></path>'
+    + '<path d="'+areaUp+'" fill="#B33A2B" opacity=".14" clip-path="url(#dn)"></path>'
+    + '<line x1="6" y1="'+zero+'" x2="'+(width-6)+'" y2="'+zero+'" stroke="#B9C2BA" stroke-dasharray="3 3"></line>'
+    + '<text x="8" y="'+(zero-5)+'" font-size="9.5" fill="#9AA5A9">0</text>'
+    + '<polyline points="'+poly+'" fill="none" stroke="#1B2A33" stroke-width="2" '
+    + 'stroke-linejoin="round" stroke-linecap="round"></polyline>'
+    + dots + labels + '</svg>'
+    + '<div class="legend"><span>Шугам: тухайн өдрийн эцсийн үлдэгдэл</span>'
+    + '<span>Доор: тухайн өдрийн цэвэр урсгал (мянгаар)</span></div></div>';
+}
+
 function detailView(j){
   const s = spent(j), e = earned(j), av = assetVal(j);
   let h = '<button class="link" onclick="openId=null;editContract=false;render()">← '
@@ -229,6 +290,8 @@ function detailView(j){
     + '<label class="check" style="margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line)">'
     + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>'
     + 'Ажил дууссан</label></div>';
+
+  h += chartSvg(j);
 
   h += '<div class="card" style="margin-bottom:18px">'
     + '<div class="tabs">'
