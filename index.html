@@ -60,7 +60,7 @@ input:focus{border-color:var(--ink)}
 .danger{background:none;border:none;color:var(--bad);font-size:14px;margin-top:20px;cursor:pointer}
 .tabs{display:flex;background:#EDF0EC;border-radius:8px;padding:3px;margin-bottom:12px}
 .tabs button{flex:1;padding:8px 2px;border-radius:6px;border:none;background:transparent;color:var(--muted);
-  font-size:14px;font-weight:600;cursor:pointer}
+  font-size:13px;white-space:nowrap;font-weight:600;cursor:pointer}
 .tabs button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);
   border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
@@ -92,10 +92,33 @@ input:focus{border-color:var(--ink)}
 .off .rdesc{text-decoration:line-through}
 .secttl{font-size:13px;color:var(--muted);margin:22px 0 8px;font-weight:600}
 .chartbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-  padding:14px 6px 10px;margin-bottom:18px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  padding:14px 6px 10px;margin-bottom:18px;overflow:hidden}
+.chartscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chartscroll::-webkit-scrollbar{display:none}
 .chartttl{font-size:13px;color:var(--muted);font-weight:600;padding:0 10px 2px}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);padding:8px 10px 0}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:16px;
+  padding:6px 11px;font-size:13px;cursor:pointer}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.catsel{border:none;border-radius:5px;font-size:11.5px;padding:2px 4px;margin-top:4px;
+  background:#EEF1ED;color:var(--ink);font-family:inherit;max-width:150px}
+.catrow{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:5px 0}
+.catrow i{width:10px;height:10px;border-radius:3px;flex:none}
+.catrow .cn{flex:1;min-width:0}
+.catrow .cp{color:var(--muted);font-size:12px;width:38px;text-align:right}
+.catrow .ca{font-weight:600;white-space:nowrap}
+.prog{margin:10px 0 4px}
+.prog .pl{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.prog .pb{height:7px;background:var(--track);border-radius:4px;overflow:hidden}
+.prog .pb i{display:block;height:100%;border-radius:4px}
+.warn{background:#FBE9E6;color:var(--bad);border-radius:8px;padding:9px 11px;font-size:13.5px;margin-top:12px;line-height:1.4}
+.okmsg{background:#E6F0EA;color:var(--good);border-radius:8px;padding:9px 11px;font-size:13.5px;margin-top:12px;line-height:1.4}
+.fc{font-size:13.5px;margin-top:10px;line-height:1.5}
+input[type=range]{width:100%;accent-color:var(--blue);padding:0;border:none;background:transparent}
+.wtag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#FBE9E6;
+  color:var(--bad);font-size:11px;font-weight:600;vertical-align:2px}
 .navbtn{display:flex;justify-content:space-between;align-items:center;width:100%;
   background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
   margin-bottom:10px;cursor:pointer;font-size:15px;font-weight:600;color:inherit}
@@ -129,6 +152,7 @@ function load(){
     ...j,
     contract: j.contract ?? j.budget ?? 0,
     incomes: j.incomes||[],
+    labor: j.labor||[],
     expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
   }));
 }
@@ -140,6 +164,20 @@ const earned = j => sum(j.incomes);
 const assets = j => j.expenses.filter(e=>e.asset && !e.writtenOff);
 const written = j => j.expenses.filter(e=>e.asset && e.writtenOff);
 const assetVal = j => sum(assets(j));
+const CATS = [
+  {k:'mat',   t:'Материал',        c:'#2A5F7A'},
+  {k:'wage',  t:'Цалин',           c:'#2F6B4F'},
+  {k:'trans', t:'Тээвэр/шатахуун', c:'#8A6A1F'},
+  {k:'rent',  t:'Техник түрээс',   c:'#6B4C8A'},
+  {k:'food',  t:'Хоол',            c:'#C0762F'},
+  {k:'other', t:'Бусад',           c:'#8A9499'}
+];
+const catOf = k => CATS.find(c=>c.k===k) || CATS[CATS.length-1];
+let selCat = 'mat';
+const spentPct = j => j.contract>0 ? spent(j)/j.contract*100 : 0;
+const lagOf = j => (j.progress||0) > 0 || spent(j) > 0 ? spentPct(j) - (j.progress||0) : 0;
+const manDays = j => (j.labor||[]).reduce((s,e)=>s+e.people,0);
+const nd = v => (Math.round(v*10)/10).toString();
 
 function pair(label, value){
   return '<div class="pair"><div class="plabel">'+label+'</div><div class="pval '+(value<0?'neg':'pos')+'">'+fmt(value)+'</div></div>';
@@ -153,6 +191,7 @@ function render(){
   else if(view === 'done') html = doneView();
   else html = listView();
   document.getElementById('app').innerHTML = html;
+  document.querySelectorAll('.chartscroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
 }
 
 function listView(){
@@ -203,17 +242,80 @@ function listView(){
     const s = spent(j), cb = j.contract - s, ib = earned(j) - s, av = assetVal(j);
     const pct = j.contract>0 ? Math.min(s/j.contract*100,100) : 0;
     h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
-      + '<div class="jname">'+esc(j.name)+'</div>'
+      + '<div class="jname">'+esc(j.name)+(lagOf(j)>=10?'<span class="wtag">анхаар</span>':'')+'</div>'
       + '<div class="pairs">'+pair('Гэрээний баланс',cb)+pair('Орлогын баланс',ib)+'</div>'
-      + '<div class="bar"><i style="width:'+pct+'%;background:'+(cb<0?'var(--bad)':'var(--good)')+'"></i></div>'
+      + progBars(j)
       + '<div class="sub">Гэрээ '+fmt(j.contract)+' · Орлого '+fmt(earned(j))+' · Зардал '+fmt(s)
-      + (av>0 ? '<br>Үүнээс үндсэн хөрөнгө '+fmt(av) : '') + '</div>'
+      + (av>0 ? '<br>Үүнээс үндсэн хөрөнгө '+fmt(av) : '')
+      + (manDays(j)>0 ? '<br>Хүн өдөр: '+nd(manDays(j)) : '') + '</div>'
       + '</button>';
   });
 
   h += '<div class="tools"><button onclick="exportData()">Өгөгдөл хуулах</button>'
      + '<button onclick="importData()">Сэргээх</button></div>';
   return h;
+}
+
+function progBars(j){
+  const pr = j.progress||0, sp = spentPct(j);
+  return '<div class="prog"><div class="pl"><span>Гүйцэтгэл</span><span>'+Math.round(pr)+'%</span></div>'
+    + '<div class="pb"><i style="width:'+Math.min(pr,100)+'%;background:var(--blue)"></i></div></div>'
+    + '<div class="prog" style="margin-bottom:10px"><div class="pl"><span>Төсвийн зарцуулалт</span><span>'+Math.round(sp)+'%</span></div>'
+    + '<div class="pb"><i style="width:'+Math.min(sp,100)+'%;background:'+(sp-pr>=10||sp>100?'var(--bad)':'var(--good)')+'"></i></div></div>';
+}
+
+function progressCard(j){
+  const pr = j.progress||0, s = spent(j), lag = lagOf(j);
+  let h = '<div class="card" style="margin-bottom:18px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline">'
+    + '<span style="font-weight:600">Ажлын гүйцэтгэл</span>'
+    + '<b id="prVal" style="font-size:20px;color:var(--blue)">'+pr+'%</b></div>'
+    + '<input type="range" min="0" max="100" step="5" value="'+pr+'" '
+    + 'oninput="document.getElementById(\'prVal\').textContent=this.value+\'%\'" '
+    + 'onchange="setProgress(this.value)">'
+    + progBars(j);
+  if(pr > 0 && s > 0){
+    const fcost = s / pr * 100, fprofit = j.contract - fcost;
+    h += '<div class="fc">Энэ хурдаар үргэлжилбэл эцсийн зардал ≈ <b>'+fmt(fcost)+'</b>, '
+      + 'ашиг ≈ <b class="'+(fprofit<0?'neg':'pos')+'">'+fmt(fprofit)+'</b></div>';
+  }
+  if(lag >= 10){
+    h += '<div class="warn">⚠ Зарцуулалт гүйцэтгэлээс '+Math.round(lag)+'% түрүүлж байна. Зардлаа хянах хэрэгтэй.</div>';
+  } else if(pr > 0 && s > 0){
+    h += '<div class="okmsg">Зарцуулалт гүйцэтгэлдээ тохирч байна.</div>';
+  } else if(pr === 0){
+    h += '<div class="fc" style="color:var(--muted)">Гүйцэтгэлийн хувийг гулсуулж оруулбал төсвийн зарцуулалттай харьцуулж, эцсийн ашгийг таамаглана.</div>';
+  }
+  return h + '</div>';
+}
+
+function catCard(j){
+  if(j.expenses.length === 0) return '';
+  const tot = spent(j);
+  const rows = CATS.map(c => ({c, v: j.expenses.filter(e=>catOf(e.cat).k===c.k).reduce((s,e)=>s+e.amount,0)}))
+    .filter(r=>r.v>0).sort((a,b)=>b.v-a.v);
+  // donut
+  const R = 46, C = 2*Math.PI*R;
+  let off = 0, arcs = '';
+  rows.forEach(r => {
+    const len = r.v / tot * C;
+    arcs += '<circle r="'+R+'" cx="60" cy="60" fill="none" stroke="'+r.c.c+'" stroke-width="18" '
+      + 'stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'" transform="rotate(-90 60 60)"></circle>';
+    off += len;
+  });
+  let h = '<div class="card" style="margin-bottom:18px"><div style="font-weight:600;margin-bottom:10px">Зардлын бүтэц</div>'
+    + '<div style="display:flex;gap:14px;align-items:center">'
+    + '<svg width="120" height="120" viewBox="0 0 120 120" style="flex:none">'+arcs+'</svg><div style="flex:1;min-width:0">';
+  rows.forEach(r => {
+    h += '<div class="catrow"><i style="background:'+r.c.c+'"></i><span class="cn">'+r.c.t+'</span>'
+      + '<span class="cp">'+Math.round(r.v/tot*100)+'%</span></div>';
+  });
+  h += '</div></div><div style="margin-top:10px;border-top:1px solid var(--line);padding-top:6px">';
+  rows.forEach(r => {
+    h += '<div class="catrow"><i style="background:'+r.c.c+'"></i><span class="cn">'+r.c.t+'</span>'
+      + '<span class="ca">'+fmt(r.v)+'</span></div>';
+  });
+  return h + '</div></div>';
 }
 
 function chartSvg(j){
@@ -252,7 +354,7 @@ function chartSvg(j){
   const last = pts[pts.length-1].v;
   return '<div class="chartbox"><div class="chartttl">Мөнгөн урсгал (хуримтлагдсан)'
     + '<span style="float:right;color:'+(last<0?'#B33A2B':'#2F6B4F')+'">'+fmt(last)+'</span></div>'
-    + '<svg width="'+width+'" height="'+(TOP+H+BOT)+'" viewBox="0 0 '+width+' '+(TOP+H+BOT)+'">'
+    + '<div class="chartscroll"><svg width="'+width+'" height="'+(TOP+H+BOT)+'" viewBox="0 0 '+width+' '+(TOP+H+BOT)+'">'
     + '<defs>'
     + '<clipPath id="up"><rect x="0" y="0" width="'+width+'" height="'+zero+'"></rect></clipPath>'
     + '<clipPath id="dn"><rect x="0" y="'+zero+'" width="'+width+'" height="'+(TOP+H-zero+2)+'"></rect></clipPath>'
@@ -263,7 +365,8 @@ function chartSvg(j){
     + '<text x="8" y="'+(zero-5)+'" font-size="9.5" fill="#9AA5A9">0</text>'
     + '<polyline points="'+poly+'" fill="none" stroke="#1B2A33" stroke-width="2" '
     + 'stroke-linejoin="round" stroke-linecap="round"></polyline>'
-    + dots + labels + '</svg>'
+    + dots + labels + '</svg></div>'
+    + (pts.length > 6 ? '<div class="legend" style="padding-top:4px">← Өмнөх өдрүүдийг харахын тулд баруунаас зүүн тийш гүйлгэнэ</div>' : '')
     + '<div class="legend"><span>Шугам: тухайн өдрийн эцсийн үлдэгдэл</span>'
     + '<span>Доор: тухайн өдрийн цэвэр урсгал (мянгаар)</span></div></div>';
 }
@@ -286,19 +389,50 @@ function detailView(j){
   }
   h += '</div><div><div class="mlabel">Орсон орлого</div><div class="mval">'+fmt(e)+'</div></div>'
     + '<div><div class="mlabel">Нийт зардал</div><div class="mval">'+fmt(s)+'</div></div>'
-    + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(av)+'</div></div></div>'
+    + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(av)+'</div></div>'
+    + '<div><div class="mlabel">Хүн өдөр</div><div class="mval">'+nd(manDays(j))+'</div></div></div>'
     + '<label class="check" style="margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line)">'
     + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>'
     + 'Ажил дууссан</label></div>';
 
+  h += progressCard(j);
   h += chartSvg(j);
+  h += catCard(j);
 
   h += '<div class="card" style="margin-bottom:18px">'
     + '<div class="tabs">'
     + '<button class="'+(tab==='exp'?'on':'')+'" onclick="tab=\'exp\';render()">Зардал</button>'
     + '<button class="'+(tab==='inc'?'on':'')+'" onclick="tab=\'inc\';render()">Орлого</button>'
+    + '<button class="'+(tab==='labor'?'on':'')+'" onclick="tab=\'labor\';render()">Хүн өдөр</button>'
     + '<button class="'+(tab==='asset'?'on':'')+'" onclick="tab=\'asset\';render()">Хөрөнгө</button>'
     + '</div>';
+
+  if(tab === 'labor'){
+    const L = (j.labor||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
+    const dayCount = new Set(L.map(x=>x.date)).size;
+    h += '<input id="lDesc" placeholder="Ажил / хүмүүсийн нэр" style="margin-bottom:8px">'
+      + '<div style="display:flex;gap:8px;margin-bottom:10px">'
+      + '<input id="lPeople" placeholder="Хүний тоо" inputmode="decimal">'
+      + '<input id="eDate" type="date" value="'+today()+'"></div>'
+      + '<button class="btn" onclick="addLabor()">Хүн өдөр нэмэх</button></div>';
+    h += '<div class="total" style="background:#E6ECEF"><span>Нийт хүн өдөр'
+      + (dayCount ? ' <span style="color:var(--muted);font-size:13px">· '+dayCount+' ажлын өдөр</span>' : '')
+      + '</span><b style="color:var(--blue)">'+nd(manDays(j))+'</b></div>';
+    if(L.length===0){
+      h += '<div class="note">Одоогоор хүн өдөр бүртгээгүй байна.</div>';
+    } else {
+      L.forEach(it=>{
+        h += '<div class="row" style="border-left:3px solid var(--blue)"><div style="min-width:0">'
+          + '<div class="rdesc">'+esc(it.desc||'Ажилласан')+'</div>'
+          + '<div class="rdate">'+it.date+'</div></div>'
+          + '<div style="display:flex;align-items:center;gap:8px">'
+          + '<span class="ramt">'+nd(it.people)+' хүн</span>'
+          + '<button class="x" onclick="delLabor(\''+it.id+'\')">×</button></div></div>';
+      });
+    }
+    h += '<button class="danger" onclick="delJob()">Энэ ажлыг устгах</button>';
+    return h;
+  }
 
   if(tab === 'asset'){
     h += '<div class="note" style="padding:0">Зардал бүртгэхдээ тэмдэглэсэн хөрөнгө энд цугларна. Гэмтсэн зүйлээ "Хасах" дарж актална.</div></div>';
@@ -325,6 +459,9 @@ function detailView(j){
     + '<input id="eAmt" placeholder="Дүн (₮)" inputmode="numeric" oninput="liveNum(this)">'
     + '<input id="eDate" type="date" value="'+today()+'"></div>';
   if(tab==='exp'){
+    h += '<div class="chips">' + CATS.map(c =>
+        '<button class="chip'+(c.k===selCat?' on':'')+'" onclick="pickCat(this,\''+c.k+'\')">'+c.t+'</button>'
+      ).join('') + '</div>';
     h += '<label class="check"><input type="checkbox" id="eAsset">Үндсэн хөрөнгө болж үлдэнэ</label>';
   }
   h += '<button class="btn '+(tab==='inc'?'blue':'')+'" onclick="addEntry()">'
@@ -338,6 +475,10 @@ function detailView(j){
       const cls = (tab==='exp' && it.asset) ? 'asset' : tab;
       h += '<div class="row '+cls+'"><div style="min-width:0"><div class="rdesc">'+esc(it.desc)
         + (it.asset ? '<span class="tag">хөрөнгө</span>' : '') + '</div>'
+        + (tab==='exp' ? '<select class="catsel" style="border-left:3px solid '+catOf(it.cat).c+'" '
+            + 'onchange="setCat(\''+it.id+'\',this.value)">'
+            + CATS.map(c=>'<option value="'+c.k+'"'+(catOf(it.cat).k===c.k?' selected':'')+'>'+c.t+'</option>').join('')
+            + '</select>' : '')
         + '<div class="rdate">'+it.date+'</div></div>'
         + '<div style="display:flex;align-items:center;gap:8px">'
         + '<span class="ramt">'+(tab==='exp'?'−':'+')+fmt(it.amount)+'</span>'
@@ -440,7 +581,7 @@ function addJob(){
   const name = document.getElementById('nName').value.trim();
   const c = num(document.getElementById('nContract').value);
   if(!name || !(c>0)){ alert('Ажлын нэр болон гэрээний дүнг оруулна уу.'); return; }
-  jobs.unshift({id:uid(), name, contract:c, incomes:[], expenses:[]});
+  jobs.unshift({id:uid(), name, contract:c, incomes:[], expenses:[], labor:[]});
   newJob=false; save(); render();
 }
 
@@ -454,9 +595,48 @@ function addEntry(){
     desc: document.getElementById('eDesc').value.trim() || (tab==='exp'?'Зардал':'Орлого'),
     amount: a,
     date: document.getElementById('eDate').value || today(),
-    asset: tab==='exp' && chk && chk.checked
+    asset: tab==='exp' && chk && chk.checked,
+    cat: tab==='exp' ? selCat : undefined
   };
   (tab==='exp'? j.expenses : j.incomes).push(entry);
+  save(); render();
+}
+
+function pickCat(el, k){
+  selCat = k;
+  el.parentNode.querySelectorAll('.chip').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function setCat(eid, k){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const e = j.expenses.find(x=>x.id===eid); if(!e) return;
+  e.cat = k; save(); render();
+}
+
+function setProgress(v){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.progress = Math.max(0, Math.min(100, parseInt(v,10)||0));
+  save(); render();
+}
+
+function addLabor(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const p = parseFloat(String(document.getElementById('lPeople').value).replace(',','.'));
+  if(!(p>0)){ alert('Хүний тоог оруулна уу.'); return; }
+  j.labor = j.labor || [];
+  j.labor.push({
+    id: uid(),
+    desc: document.getElementById('lDesc').value.trim(),
+    people: p,
+    date: document.getElementById('eDate').value || today()
+  });
+  save(); render();
+}
+
+function delLabor(lid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.labor = (j.labor||[]).filter(x=>x.id!==lid);
   save(); render();
 }
 
@@ -500,7 +680,7 @@ function importData(){
   }catch(e){ alert('Өгөгдөл буруу байна.'); }
 }
 function load2(d){
-  jobs = d.map(j=>({...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[],
+  jobs = d.map(j=>({...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[],
     expenses:(j.expenses||[]).map(e=>({...e, asset: !!e.asset}))}));
 }
 
