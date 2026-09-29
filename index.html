@@ -173,10 +173,17 @@ const CATS = [
   {k:'tax',   t:'Татвар',          c:'#A33D5C'},
   {k:'other', t:'Бусад',           c:'#8A9499'}
 ];
+const TYPES = [
+  {k:'asm', t:'Угсралт',     c:'#2A5F7A'},
+  {k:'dsg', t:'Зураг төсөл', c:'#6B4C8A'}
+];
+const typeOf = k => TYPES.find(t=>t.k===k);
+let newType = 'asm';
 const catOf = k => CATS.find(c=>c.k===k) || CATS[CATS.length-1];
 let selCat = 'mat';
 const spentPct = j => j.contract>0 ? spent(j)/j.contract*100 : 0;
 const lagOf = j => (j.progress||0) > 0 || spent(j) > 0 ? spentPct(j) - (j.progress||0) : 0;
+const workDays = j => new Set((j.labor||[]).map(e=>e.date)).size;
 const manDays = j => (j.labor||[]).reduce((s,e)=>s+e.people,0);
 const nd = v => (Math.round(v*10)/10).toString();
 
@@ -190,6 +197,7 @@ function render(){
   if(job) html = detailView(job);
   else if(view === 'assets') html = assetsView();
   else if(view === 'done') html = doneView();
+  else if(view === 'types') html = typesView();
   else html = listView();
   document.getElementById('app').innerHTML = html;
   document.querySelectorAll('.chartscroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
@@ -202,6 +210,7 @@ function listView(){
   const tS = jobs.reduce((s,j)=>s+spent(j),0);
   const tE = jobs.reduce((s,j)=>s+earned(j),0);
   const tA = jobs.reduce((s,j)=>s+assetVal(j),0);
+  const tW = jobs.reduce((s,j)=>s+workDays(j),0);
 
   let h = '<div class="hero"><div style="font-size:13px;opacity:.6">Бүх ажлын нэгдсэн дүн</div>'
     + '<div class="pairs">' + pair('Гэрээнээс гарах ашиг', tC-tS) + pair('Орлогоос гарсан баланс', tE-tS) + '</div>'
@@ -210,6 +219,7 @@ function listView(){
     + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(tE)+'</div></div>'
     + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(tS)+'</div></div>'
     + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(tA)+'</div></div>'
+    + (tW>0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+tW+'</div></div>' : '')
     + '</div></div>';
 
   const allInc = [], allExp = [];
@@ -218,6 +228,9 @@ function listView(){
 
   h += '<button class="navbtn" onclick="view=\'assets\';render()">'
      + '<span>Үндсэн хөрөнгө</span><span style="color:var(--asset)">'+fmt(tA)+' ›</span></button>';
+
+  h += '<button class="navbtn" onclick="view=\'types\';render()">'
+     + '<span>Ажлын төрлөөр</span><span style="color:var(--muted)">Угсралт / Зураг төсөл ›</span></button>';
 
   if(done.length>0){
     const dp = done.reduce((s,j)=>s+(earned(j)-spent(j)),0);
@@ -230,6 +243,9 @@ function listView(){
     h += '<div class="card">'
       + '<input id="nName" placeholder="Ажлын нэр" style="margin-bottom:10px">'
       + '<input id="nContract" placeholder="Гэрээний дүн (₮)" inputmode="numeric" oninput="liveNum(this)" style="margin-bottom:12px">'
+      + '<div class="chips">' + TYPES.map(t =>
+          '<button class="chip'+(t.k===newType?' on':'')+'" onclick="pickType(this,\''+t.k+'\')">'+t.t+'</button>'
+        ).join('') + '</div>'
       + '<div style="display:flex;gap:8px"><button class="btn" onclick="addJob()">Ажил үүсгэх</button>'
       + '<button class="btn ghost" onclick="newJob=false;render()">Болих</button></div></div>';
   } else {
@@ -243,12 +259,12 @@ function listView(){
     const s = spent(j), cb = j.contract - s, ib = earned(j) - s, av = assetVal(j);
     const pct = j.contract>0 ? Math.min(s/j.contract*100,100) : 0;
     h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
-      + '<div class="jname">'+esc(j.name)+(lagOf(j)>=10?'<span class="wtag">анхаар</span>':'')+'</div>'
+      + '<div class="jname">'+esc(j.name)+typeTag(j)+(lagOf(j)>=10?'<span class="wtag">анхаар</span>':'')+'</div>'
       + '<div class="pairs">'+pair('Гэрээний баланс',cb)+pair('Орлогын баланс',ib)+'</div>'
       + progBars(j)
       + '<div class="sub">Гэрээ '+fmt(j.contract)+' · Орлого '+fmt(earned(j))+' · Зардал '+fmt(s)
       + (av>0 ? '<br>Үүнээс үндсэн хөрөнгө '+fmt(av) : '')
-      + (manDays(j)>0 ? '<br>Хүн өдөр: '+nd(manDays(j)) : '') + '</div>'
+      + (manDays(j)>0 ? '<br>Ажилласан өдөр: '+workDays(j)+' · Хүн өдөр: '+nd(manDays(j)) : '') + '</div>'
       + '</button>';
   });
 
@@ -379,6 +395,9 @@ function detailView(j){
     + '<div class="card" style="border-radius:14px;padding:18px;margin-bottom:18px">'
     + '<div style="font-size:20px;font-weight:600">'+esc(j.name)
     + (j.done ? '<span class="tag" style="background:#E4EAE6;color:var(--good)">дууссан</span>' : '')+'</div>'
+    + '<div class="chips" style="margin:10px 0 0">' + TYPES.map(t =>
+        '<button class="chip'+(j.type===t.k?' on':'')+'" onclick="setType(\''+t.k+'\')">'+t.t+'</button>'
+      ).join('') + '</div>'
     + '<div class="pairs">'+pair('Гэрээний дүнгээс гарсан баланс', j.contract-s)+pair('Орлогоос гарсан баланс', e-s)+'</div>'
     + '<div class="meta"><div><div class="mlabel">Гэрээний дүн</div>';
   if(editContract){
@@ -391,6 +410,7 @@ function detailView(j){
   h += '</div><div><div class="mlabel">Орсон орлого</div><div class="mval">'+fmt(e)+'</div></div>'
     + '<div><div class="mlabel">Нийт зардал</div><div class="mval">'+fmt(s)+'</div></div>'
     + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(av)+'</div></div>'
+    + '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+workDays(j)+'</div></div>'
     + '<div><div class="mlabel">Хүн өдөр</div><div class="mval">'+nd(manDays(j))+'</div></div></div>'
     + '<label class="check" style="margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line)">'
     + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>'
@@ -416,9 +436,15 @@ function detailView(j){
       + '<input id="lPeople" placeholder="Хүний тоо" inputmode="decimal">'
       + '<input id="eDate" type="date" value="'+today()+'"></div>'
       + '<button class="btn" onclick="addLabor()">Хүн өдөр нэмэх</button></div>';
-    h += '<div class="total" style="background:#E6ECEF"><span>Нийт хүн өдөр'
-      + (dayCount ? ' <span style="color:var(--muted);font-size:13px">· '+dayCount+' ажлын өдөр</span>' : '')
-      + '</span><b style="color:var(--blue)">'+nd(manDays(j))+'</b></div>';
+    h += '<div class="pairs" style="margin:0 0 12px">'
+      + '<div class="pair"><div class="plabel">Нийт ажилласан өдөр</div>'
+      + '<div class="pval" style="color:var(--blue)">'+dayCount+'</div></div>'
+      + '<div class="pair"><div class="plabel">Нийт хүн өдөр</div>'
+      + '<div class="pval" style="color:var(--blue)">'+nd(manDays(j))+'</div></div></div>';
+    if(dayCount > 0){
+      h += '<div class="fc" style="color:var(--muted);margin:0 2px 12px">Өдөрт дунджаар '
+        + nd(manDays(j)/dayCount) + ' хүн ажилласан байна.</div>';
+    }
     if(L.length===0){
       h += '<div class="note">Одоогоор хүн өдөр бүртгээгүй байна.</div>';
     } else {
@@ -488,6 +514,61 @@ function detailView(j){
   }
   h += '<button class="danger" onclick="delJob()">Энэ ажлыг устгах</button>';
   return h;
+}
+
+function typeTag(j){
+  const t = typeOf(j.type);
+  if(!t) return '';
+  return '<span class="tag" style="background:'+t.c+'22;color:'+t.c+'">'+t.t+'</span>';
+}
+
+function typesView(){
+  let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>';
+  const groups = TYPES.map(t => ({t, list: jobs.filter(j=>j.type===t.k)}));
+  const un = jobs.filter(j => !typeOf(j.type));
+  if(un.length) groups.push({t:{k:null, t:'Ангилаагүй', c:'#8A9499'}, list: un});
+
+  groups.forEach(g => {
+    const C = g.list.reduce((s,j)=>s+j.contract,0);
+    const E = g.list.reduce((s,j)=>s+earned(j),0);
+    const S = g.list.reduce((s,j)=>s+spent(j),0);
+    h += '<div class="card" style="border-left:4px solid '+g.t.c+';margin-bottom:14px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline">'
+      + '<span style="font-size:17px;font-weight:600">'+g.t.t+'</span>'
+      + '<span style="font-size:13px;color:var(--muted)">'+g.list.length+' ажил</span></div>'
+      + '<div class="pairs">'+pair('Гэрээнээс гарах ашиг', C-S)+pair('Орлогоос гарсан баланс', E-S)+'</div>'
+      + '<div class="meta"><div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(C)+'</div></div>'
+      + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(E)+'</div></div>'
+      + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(S)+'</div></div></div>';
+    if(g.list.length === 0){
+      h += '<div class="note" style="padding:10px 0 0">Ажил бүртгэгдээгүй.</div>';
+    } else {
+      h += '<div style="margin-top:12px;border-top:1px solid var(--line)">';
+      g.list.forEach(j => {
+        const bal = j.contract - spent(j);
+        h += '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;'
+          + 'padding:11px 0;border-bottom:1px solid #EFF2EE;cursor:pointer" onclick="openJob(\''+j.id+'\')">'
+          + '<span style="font-size:15px">'+esc(j.name)
+          + (j.done?' <span style="color:var(--muted);font-size:12px">· дууссан</span>':'')+'</span>'
+          + '<span class="'+(bal<0?'neg':'pos')+'" style="font-weight:600;white-space:nowrap">'+fmt(bal)+'</span></div>';
+      });
+      h += '</div>';
+    }
+    h += '</div>';
+  });
+  return h;
+}
+
+function pickType(el, k){
+  newType = k;
+  el.parentNode.querySelectorAll('.chip').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function setType(k){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.type = (j.type === k) ? undefined : k;
+  save(); render();
 }
 
 function doneView(){
@@ -582,7 +663,7 @@ function addJob(){
   const name = document.getElementById('nName').value.trim();
   const c = num(document.getElementById('nContract').value);
   if(!name || !(c>0)){ alert('Ажлын нэр болон гэрээний дүнг оруулна уу.'); return; }
-  jobs.unshift({id:uid(), name, contract:c, incomes:[], expenses:[], labor:[]});
+  jobs.unshift({id:uid(), name, contract:c, type:newType, incomes:[], expenses:[], labor:[]});
   newJob=false; save(); render();
 }
 
