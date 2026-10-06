@@ -698,15 +698,19 @@ function typeTag(j){
 }
 
 function rosterStats(r){
-  let days = 0, paid = 0, njobs = 0;
+  let days = 0, paid = 0, njobs = 0, due = 0, bonus = 0, open = [];
   jobs.forEach(j => {
     const w = (j.workers||[]).find(x => x.rid === r.id || x.name === r.name);
     if(!w) return;
     njobs++;
     days += wkDays(j, w.id);
     paid += (j.wagePays||[]).filter(p=>p.workerId===w.id).reduce((s,p)=>s+p.amount,0);
+    bonus += wkBonus(j, w.id);
+    const d = wkDue(j, w);
+    due += d;
+    if(d > 0) open.push({name: j.name, amt: d, days: wkDays(j,w.id) - wkPaidDays(j,w.id)});
   });
-  return {days, paid, njobs};
+  return {days, paid, njobs, due, bonus, open};
 }
 
 const ROLES = ['Инженер','Техникч','Ахлах','Гагнуурчин','Цахилгаанчин','Жолооч','Туслах ажилтан'];
@@ -729,8 +733,14 @@ function confirmBox(text, yesFn){
 }
 
 function rosterView(){
-  let h = '<button class="link" onclick="view=\'list\';ui={};render()">← Буцах</button>'
-    + '<div class="secttl" style="margin:0 0 10px">Ажилчдын жагсаалт</div>';
+  let h = '<button class="link" onclick="view=\'list\';ui={};render()">← Буцах</button>';
+  const totalDue = roster.reduce((s,r)=>s+rosterStats(r).due, 0);
+  if(roster.length > 0){
+    h += '<div class="total" style="background:'+(totalDue>0?'#FBE9E6':'#E6F0EA')+'">'
+      + '<span>Нийт олгох цалин</span><b style="color:'+(totalDue>0?'var(--bad)':'var(--good)')+'">'
+      + fmt(totalDue)+'</b></div>';
+  }
+  h += '<div class="secttl" style="margin:0 0 10px">Ажилчдын жагсаалт</div>';
   if(roster.length === 0 && !ui.rAdd){
     h += '<div class="empty">Ажилтан бүртгээгүй байна. Нэмсэн ажилтнаа дараа нь аль ч ажилд дуудаж оруулна.</div>';
   }
@@ -745,8 +755,15 @@ function rosterView(){
       + '<span style="font-weight:600;font-size:15.5px">'+esc(r.name)
       + (r.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(r.role)+'</span>' : '')+'</span>'
       + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(r.rate)+' / өдөр</span></div>'
-      + '<div class="sub" style="margin:7px 0 10px">'+st.njobs+' ажилд · '+nd(st.days)
-      + ' өдөр ажилласан · '+fmt(st.paid)+' цалин авсан</div>'
+      + '<div class="pairs" style="margin:9px 0 10px">'
+      + '<div class="pair"><div class="plabel">Авах цалин</div><div class="pval '
+      + (st.due>0?'neg':'pos')+'">'+fmt(st.due)+'</div></div>'
+      + '<div class="pair"><div class="plabel">Авсан цалин</div><div class="pval" style="color:var(--ink)">'
+      + fmt(st.paid)+'</div></div></div>'
+      + '<div class="sub" style="margin:0 0 10px">'+st.njobs+' ажилд · '+nd(st.days)+' өдөр ажилласан'
+      + (st.bonus>0 ? ' · урамшуулал '+fmt(st.bonus) : '')
+      + (st.open.length ? '<br>'+st.open.map(o=>esc(o.name)+': '+nd(o.days)+' өдөр ('+fmt(o.amt)+')').join('<br>') : '')
+      + '</div>'
       + '<div style="display:flex;gap:8px">'
       + '<button class="small" onclick="ui={rEdit:\''+r.id+'\'};render()">Засах</button>'
       + '<button class="small warn" onclick="ui={rDel:\''+r.id+'\'};render()">Устгах</button></div>'
