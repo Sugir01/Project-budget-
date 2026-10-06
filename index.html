@@ -102,6 +102,19 @@ input:focus{border-color:var(--ink)}
 .chip{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:16px;
   padding:6px 11px;font-size:13px;cursor:pointer}
 .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.inf{background:#F2F5F1;border-radius:10px;padding:12px;margin-bottom:10px}
+.inf input,.inf textarea{margin-bottom:8px}
+.inf .btns{display:flex;gap:8px}
+.inf .btns .btn{padding:9px 14px;font-size:14px}
+.confirm{background:#FBE9E6;border-radius:10px;padding:11px 12px;margin-top:8px;font-size:13.5px;color:var(--bad)}
+.confirm .btns{display:flex;gap:8px;margin-top:9px}
+.confirm button{border:none;border-radius:7px;padding:7px 14px;font-size:13.5px;cursor:pointer;font-family:inherit}
+.confirm .yes{background:var(--bad);color:#fff}
+.confirm .no{background:#fff;color:var(--muted);border:1px solid var(--line)}
+textarea{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);font-size:15px;font-family:inherit;min-height:90px}
+.wsel{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);font-size:16px;font-family:inherit}
 .catsel{border:none;border-radius:5px;font-size:11.5px;padding:2px 4px;margin-top:4px;
   background:#EEF1ED;color:var(--ink);font-family:inherit;max-width:150px}
 .catrow{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:5px 0}
@@ -128,7 +141,11 @@ input[type=range]{width:100%;accent-color:var(--blue);padding:0;border:none;back
 <div id="app"></div>
 <script>
 const KEY = 'ajliin-zardal-v1';
+const RKEY = 'ajliin-ajilchid-v1';
 let jobs = [];
+let roster = [];
+let pickOpen = false;
+let ui = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
 const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
@@ -153,9 +170,16 @@ function load(){
     contract: j.contract ?? j.budget ?? 0,
     incomes: j.incomes||[],
     labor: j.labor||[],
+    workers: j.workers||[],
+    wagePays: j.wagePays||[],
+    bonuses: j.bonuses||[],
     expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
   }));
 }
+function loadRoster(){
+  try{ const raw = localStorage.getItem(RKEY); if(raw) roster = JSON.parse(raw); }catch(e){ roster = []; }
+}
+function saveRoster(){ try{ localStorage.setItem(RKEY, JSON.stringify(roster)); }catch(e){} }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(jobs)); }catch(e){ alert('Хадгалж чадсангүй.'); } }
 
 const sum = a => a.reduce((s,e)=>s+e.amount,0);
@@ -184,6 +208,13 @@ let selCat = 'mat';
 const spentPct = j => j.contract>0 ? spent(j)/j.contract*100 : 0;
 const lagOf = j => (j.progress||0) > 0 || spent(j) > 0 ? spentPct(j) - (j.progress||0) : 0;
 const workDays = j => new Set((j.labor||[]).map(e=>e.date)).size;
+const wkDays = (j,wid) => (j.labor||[]).filter(e=>e.workerId===wid).reduce((s,e)=>s+e.people,0);
+const wkPaidDays = (j,wid) => (j.wagePays||[]).filter(p=>p.workerId===wid).reduce((s,p)=>s+p.days,0);
+const wkDue = (j,w) => (wkDays(j,w.id) - wkPaidDays(j,w.id)) * w.rate;
+const wageAccrued = j => (j.workers||[]).reduce((s,w)=>s+wkDays(j,w.id)*w.rate,0);
+const wagePaid = j => (j.wagePays||[]).reduce((s,p)=>s+p.amount,0);
+const wkBonus = (j,wid) => (j.bonuses||[]).filter(b=>b.workerId===wid).reduce((s,b)=>s+b.amount,0);
+const bonusTotal = j => (j.bonuses||[]).reduce((s,b)=>s+b.amount,0);
 const manDays = j => (j.labor||[]).reduce((s,e)=>s+e.people,0);
 const nd = v => (Math.round(v*10)/10).toString();
 
@@ -198,6 +229,7 @@ function render(){
   else if(view === 'assets') html = assetsView();
   else if(view === 'done') html = doneView();
   else if(view === 'types') html = typesView();
+  else if(view === 'roster') html = rosterView();
   else html = listView();
   document.getElementById('app').innerHTML = html;
   document.querySelectorAll('.chartscroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
@@ -228,6 +260,9 @@ function listView(){
 
   h += '<button class="navbtn" onclick="view=\'assets\';render()">'
      + '<span>Үндсэн хөрөнгө</span><span style="color:var(--asset)">'+fmt(tA)+' ›</span></button>';
+
+  h += '<button class="navbtn" onclick="view=\'roster\';render()">'
+     + '<span>Ажилчид</span><span style="color:var(--muted)">'+roster.length+' хүн ›</span></button>';
 
   h += '<button class="navbtn" onclick="view=\'types\';render()">'
      + '<span>Ажлын төрлөөр</span><span style="color:var(--muted)">Угсралт / Зураг төсөл ›</span></button>';
@@ -269,7 +304,19 @@ function listView(){
   });
 
   h += '<div class="tools"><button onclick="exportData()">Өгөгдөл хуулах</button>'
-     + '<button onclick="importData()">Сэргээх</button></div>';
+     + '<button onclick="ui={imp:1};render()">Сэргээх</button></div>';
+  if(ui.exp){
+    h += '<div class="inf" style="margin-top:10px">'
+      + '<div class="rdate" style="margin-bottom:6px">Доорх текстийг сонгож хуулж аваарай:</div>'
+      + '<textarea readonly>'+esc(ui.exp)+'</textarea>'
+      + '<div class="btns"><button class="btn ghost" onclick="ui={};render()">Хаах</button></div></div>';
+  }
+  if(ui.imp){
+    h += '<div class="inf" style="margin-top:10px">'
+      + '<textarea id="impBox" placeholder="Өмнө хуулсан өгөгдлөө энд буулгана уу"></textarea>'
+      + '<div class="btns"><button class="btn" onclick="importData()">Сэргээх</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  }
   return h;
 }
 
@@ -431,33 +478,129 @@ function detailView(j){
   if(tab === 'labor'){
     const L = (j.labor||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
     const dayCount = new Set(L.map(x=>x.date)).size;
-    h += '<input id="lDesc" placeholder="Ажил / хүмүүсийн нэр" style="margin-bottom:8px">'
-      + '<div style="display:flex;gap:8px;margin-bottom:10px">'
-      + '<input id="lPeople" placeholder="Хүний тоо" inputmode="decimal">'
-      + '<input id="eDate" type="date" value="'+today()+'"></div>'
-      + '<button class="btn" onclick="addLabor()">Хүн өдөр нэмэх</button></div>';
-    h += '<div class="pairs" style="margin:0 0 12px">'
+    const W = j.workers||[];
+    const acc = wageAccrued(j), paid = wagePaid(j);
+
+    // ирц бүртгэх
+    if(W.length === 0){
+      h += '<div class="note" style="padding:0 2px 10px">Эхлээд ажилтнаа нэмнэ үү. Дараа нь ирцийг нь өдрөөр бүртгэнэ.</div></div>';
+    } else {
+      h += '<select id="lWorker" class="wsel">'
+        + W.map(w=>'<option value="'+w.id+'">'+esc(w.name)+' · '+fmt(w.rate)+'/өдөр</option>').join('')
+        + '</select>'
+        + '<div style="display:flex;gap:8px;margin:8px 0 10px">'
+        + '<input id="lDays" placeholder="Өдөр" inputmode="decimal" value="1">'
+        + '<input id="eDate" type="date" value="'+today()+'"></div>'
+        + '<button class="btn" onclick="addAttend()">Ирц бүртгэх</button></div>';
+    }
+
+    // нэгдсэн тоо
+    h += '<div class="pairs" style="margin:0 0 10px">'
       + '<div class="pair"><div class="plabel">Нийт ажилласан өдөр</div>'
       + '<div class="pval" style="color:var(--blue)">'+dayCount+'</div></div>'
       + '<div class="pair"><div class="plabel">Нийт хүн өдөр</div>'
-      + '<div class="pval" style="color:var(--blue)">'+nd(manDays(j))+'</div></div></div>';
-    if(dayCount > 0){
-      h += '<div class="fc" style="color:var(--muted);margin:0 2px 12px">Өдөрт дунджаар '
-        + nd(manDays(j)/dayCount) + ' хүн ажилласан байна.</div>';
+      + '<div class="pval" style="color:var(--blue)">'+nd(manDays(j))+'</div></div></div>'
+      + '<div class="pairs" style="margin:0 0 14px">'
+      + '<div class="pair"><div class="plabel">Ногдсон цалин</div>'
+      + '<div class="pval" style="color:var(--ink)">'+fmt(acc)+'</div></div>'
+      + '<div class="pair"><div class="plabel">Олгоогүй үлдэгдэл</div>'
+      + '<div class="pval '+(acc-paid>0?'neg':'pos')+'">'+fmt(acc-paid)+'</div></div></div>'
+      + '<div class="fc" style="color:var(--muted);margin:0 2px 14px">Олгосон цалин '+fmt(paid)
+      + (bonusTotal(j)>0 ? ' · Урамшуулал '+fmt(bonusTotal(j)) : '')
+      + ' — зардалд автоматаар бүртгэгдсэн.</div>';
+
+    // ажилчид
+    h += '<div class="secttl" style="margin:0 0 8px">Ажилчид</div>';
+    if(W.length === 0 && !ui.wAdd){
+      h += '<div class="note">Ажилтан нэмээгүй байна.</div>';
     }
+    W.forEach(w => {
+      if(ui.wEdit === w.id){
+        h += wForm('we', w.name, w.rate, 'Хадгалах', "saveWorkerEdit('"+w.id+"')");
+        return;
+      }
+      const d = wkDays(j,w.id), pd = wkPaidDays(j,w.id), due = wkDue(j,w), bn = wkBonus(j,w.id);
+      h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
+        + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+        + '<span style="font-weight:600;font-size:15.5px">'+esc(w.name)+'</span>'
+        + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(w.rate)+' / өдөр</span></div>'
+        + '<div class="sub" style="margin:7px 0 10px">Ажилласан '+nd(d)+' өдөр · Олгосон '+nd(pd)
+        + ' өдөр · Үлдэгдэл <b style="color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</b>'
+        + (bn>0 ? '<br>Урамшуулал: <b style="color:var(--good)">'+fmt(bn)+'</b>' : '')+'</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        + '<button class="small" onclick="ui={pay:\''+w.id+'\'};render()">Цалин олгох</button>'
+        + '<button class="small" onclick="ui={bon:\''+w.id+'\'};render()">Урамшуулал</button>'
+        + '<button class="small" onclick="ui={wEdit:\''+w.id+'\'};render()">Засах</button>'
+        + '<button class="small warn" onclick="ui={wDel:\''+w.id+'\'};render()">Устгах</button></div>';
+
+      if(ui.pay === w.id){
+        const left = d - pd;
+        h += '<div class="inf" style="margin:10px 0 0">'
+          + '<div class="rdate" style="margin-bottom:6px">Үлдэгдэл '+nd(left>0?left:0)+' өдөр · '+fmt(w.rate)+'/өдөр</div>'
+          + '<input id="payDays" inputmode="decimal" placeholder="Хэдэн өдрийн цалин" value="'+nd(left>0?left:0)+'">'
+          + '<input id="payDate" type="date" value="'+today()+'">'
+          + '<div class="btns"><button class="btn" onclick="payWage(\''+w.id+'\')">Олгох</button>'
+          + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+      }
+      if(ui.bon === w.id){
+        h += '<div class="inf" style="margin:10px 0 0">'
+          + '<input id="bonAmt" inputmode="numeric" oninput="liveNum(this)" placeholder="Урамшууллын дүн (₮)">'
+          + '<input id="bonNote" placeholder="Шалтгаан (сайн ажилласан, илүү цаг…)">'
+          + '<input id="bonDate" type="date" value="'+today()+'">'
+          + '<div class="btns"><button class="btn" onclick="payBonus(\''+w.id+'\')">Олгох</button>'
+          + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+      }
+      if(ui.wDel === w.id){
+        h += confirmBox(esc(w.name)+' — ирцийн бичилттэй нь устгах уу? Олгосон цалин зардалд үлдэнэ.',
+                        "delWorker('"+w.id+"')");
+      }
+      h += '</div>';
+    });
+
+    if(ui.wAdd){
+      h += wForm('wa', '', 0, 'Нэмэх', 'addWorker()');
+    } else {
+      const avail = roster.filter(r => !W.some(w => w.rid === r.id || w.name === r.name));
+      h += '<div style="display:flex;gap:8px;margin:6px 0 16px">'
+        + '<button class="btn ghost" style="flex:1" onclick="ui={wAdd:1};render()">+ Шинэ ажилтан</button>'
+        + '<button class="btn ghost" style="flex:1" onclick="pickOpen=!pickOpen;render()">'
+        + (pickOpen ? 'Хаах' : 'Жагсаалтаас дуудах')+'</button></div>';
+      if(pickOpen){
+        h += '<div class="card" style="margin:-10px 0 16px">';
+        if(roster.length === 0){
+          h += '<div class="note" style="padding:0">Ажилчдын жагсаалт хоосон байна. Нүүр хуудасны "Ажилчид" цэснээс нэмнэ үү.</div>';
+        } else if(avail.length === 0){
+          h += '<div class="note" style="padding:0">Жагсаалтын бүх ажилтан энэ ажилд нэмэгдсэн байна.</div>';
+        } else {
+          avail.forEach(r => {
+            h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
+              + 'padding:10px 0;border-bottom:1px solid #EFF2EE">'
+              + '<div style="min-width:0"><div style="font-size:15px;font-weight:500">'+esc(r.name)+'</div>'
+              + '<div class="rdate">'+fmt(r.rate)+' / өдөр</div></div>'
+              + '<button class="small" onclick="importWorker(\''+r.id+'\')">Нэмэх</button></div>';
+          });
+        }
+        h += '</div>';
+      }
+    }
+
+    // ирцийн түүх
+    h += '<div class="secttl" style="margin:0 0 8px">Ирцийн түүх</div>';
     if(L.length===0){
-      h += '<div class="note">Одоогоор хүн өдөр бүртгээгүй байна.</div>';
+      h += '<div class="note">Одоогоор ирц бүртгээгүй байна.</div>';
     } else {
       L.forEach(it=>{
+        const w = W.find(x=>x.id===it.workerId);
         h += '<div class="row" style="border-left:3px solid var(--blue)"><div style="min-width:0">'
-          + '<div class="rdesc">'+esc(it.desc||'Ажилласан')+'</div>'
-          + '<div class="rdate">'+it.date+'</div></div>'
+          + '<div class="rdesc">'+esc(w ? w.name : (it.desc||'Ажилласан'))+'</div>'
+          + '<div class="rdate">'+it.date+(w?'':' · хуучин бичилт')+'</div></div>'
           + '<div style="display:flex;align-items:center;gap:8px">'
-          + '<span class="ramt">'+nd(it.people)+' хүн</span>'
+          + '<span class="ramt">'+nd(it.people)+(w?' өдөр':' хүн')+'</span>'
           + '<button class="x" onclick="delLabor(\''+it.id+'\')">×</button></div></div>';
       });
     }
-    h += '<button class="danger" onclick="delJob()">Энэ ажлыг устгах</button>';
+    h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
+        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
     return h;
   }
 
@@ -473,11 +616,16 @@ function detailView(j){
           + '<div class="rdate">'+it.date+'</div></div>'
           + '<div style="display:flex;align-items:center;gap:9px">'
           + '<span class="ramt">'+fmt(it.amount)+'</span>'
-          + '<button class="small warn" onclick="writeOff(\''+j.id+'\',\''+it.id+'\')">Хасах</button>'
-          + '</div></div>';
+          + '<button class="small warn" onclick="ui={off:\''+it.id+'\'};render()">Хасах</button>'
+          + '</div></div>'
+          + (ui.off === it.id ? '<div class="inf">'
+              + '<input id="offNote" placeholder="Шалтгаан" value="Гэмтсэн">'
+              + '<div class="btns"><button class="btn" onclick="writeOff(\''+j.id+'\',\''+it.id+'\')">Хасах</button>'
+              + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>' : '');
       });
     }
-    h += '<button class="danger" onclick="delJob()">Энэ ажлыг устгах</button>';
+    h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
+        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
     return h;
   }
 
@@ -512,7 +660,8 @@ function detailView(j){
         + '<button class="x" onclick="delEntry(\''+it.id+'\')">×</button></div></div>';
     });
   }
-  h += '<button class="danger" onclick="delJob()">Энэ ажлыг устгах</button>';
+  h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
+        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
   return h;
 }
 
@@ -520,6 +669,104 @@ function typeTag(j){
   const t = typeOf(j.type);
   if(!t) return '';
   return '<span class="tag" style="background:'+t.c+'22;color:'+t.c+'">'+t.t+'</span>';
+}
+
+function rosterStats(r){
+  let days = 0, paid = 0, njobs = 0;
+  jobs.forEach(j => {
+    const w = (j.workers||[]).find(x => x.rid === r.id || x.name === r.name);
+    if(!w) return;
+    njobs++;
+    days += wkDays(j, w.id);
+    paid += (j.wagePays||[]).filter(p=>p.workerId===w.id).reduce((s,p)=>s+p.amount,0);
+  });
+  return {days, paid, njobs};
+}
+
+function wForm(idp, name, rate, okLabel, okFn){
+  return '<div class="inf">'
+    + '<input id="'+idp+'Name" placeholder="Ажилтны нэр" value="'+esc(name)+'">'
+    + '<input id="'+idp+'Rate" placeholder="Өдрийн хөлс (₮)" inputmode="numeric" oninput="liveNum(this)" value="'
+    + (rate ? group(rate) : '')+'">'
+    + '<div class="btns"><button class="btn" onclick="'+okFn+'">'+okLabel+'</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+}
+
+function confirmBox(text, yesFn){
+  return '<div class="confirm">'+text
+    + '<div class="btns"><button class="yes" onclick="'+yesFn+'">Тийм, устга</button>'
+    + '<button class="no" onclick="ui={};render()">Болих</button></div></div>';
+}
+
+function rosterView(){
+  let h = '<button class="link" onclick="view=\'list\';ui={};render()">← Буцах</button>'
+    + '<div class="secttl" style="margin:0 0 10px">Ажилчдын жагсаалт</div>';
+  if(roster.length === 0 && !ui.rAdd){
+    h += '<div class="empty">Ажилтан бүртгээгүй байна. Нэмсэн ажилтнаа дараа нь аль ч ажилд дуудаж оруулна.</div>';
+  }
+  roster.forEach(r => {
+    if(ui.rEdit === r.id){
+      h += wForm('re', r.name, r.rate, 'Хадгалах', "saveRosterEdit('"+r.id+"')");
+      return;
+    }
+    const st = rosterStats(r);
+    h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+      + '<span style="font-weight:600;font-size:15.5px">'+esc(r.name)+'</span>'
+      + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(r.rate)+' / өдөр</span></div>'
+      + '<div class="sub" style="margin:7px 0 10px">'+st.njobs+' ажилд · '+nd(st.days)
+      + ' өдөр ажилласан · '+fmt(st.paid)+' цалин авсан</div>'
+      + '<div style="display:flex;gap:8px">'
+      + '<button class="small" onclick="ui={rEdit:\''+r.id+'\'};render()">Засах</button>'
+      + '<button class="small warn" onclick="ui={rDel:\''+r.id+'\'};render()">Устгах</button></div>'
+      + (ui.rDel === r.id
+          ? confirmBox(esc(r.name)+' — жагсаалтаас устгах уу? Ажлууд дээрх бүртгэл хэвээр үлдэнэ.',
+                       "delRoster('"+r.id+"')")
+          : '')
+      + '</div>';
+  });
+  if(ui.rAdd) h += wForm('ra', '', 0, 'Нэмэх', 'addRoster()');
+  else h += '<button class="btn" style="margin-top:8px" onclick="ui={rAdd:1};render()">+ Ажилтан нэмэх</button>';
+  return h;
+}
+
+function addRoster(){
+  const name = document.getElementById('raName').value.trim();
+  const r = num(document.getElementById('raRate').value) || 0;
+  if(!name){ alert('Нэрээ оруулна уу.'); return; }
+  roster.push({id: uid(), name, rate: r});
+  saveRoster(); ui={}; render();
+}
+
+function saveRosterEdit(rid){
+  const r = roster.find(x=>x.id===rid); if(!r) return;
+  const name = document.getElementById('reName').value.trim();
+  const v = num(document.getElementById('reRate').value);
+  if(name) r.name = name;
+  if(v>=0) r.rate = v;
+  saveRoster(); ui={}; render();
+}
+
+function delRoster(rid){
+  roster = roster.filter(x=>x.id!==rid);
+  saveRoster(); ui={}; render();
+}
+
+function rosterAdd(name, rate){
+  const hit = roster.find(r => r.name.toLowerCase() === name.toLowerCase());
+  if(hit) return hit.id;
+  const r = {id: uid(), name, rate};
+  roster.push(r); saveRoster();
+  return r.id;
+}
+
+function importWorker(rid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const r = roster.find(x=>x.id===rid); if(!r) return;
+  j.workers = j.workers || [];
+  if(j.workers.some(w => w.rid === r.id || w.name === r.name)) return;
+  j.workers.push({id: uid(), rid: r.id, name: r.name, rate: r.rate});
+  save(); render();
 }
 
 function typesView(){
@@ -610,8 +857,12 @@ function assetsView(){
         + '<div class="jobtag">'+esc(x.j.name)+' · '+x.e.date+'</div></div>'
         + '<div style="display:flex;align-items:center;gap:9px">'
         + '<span class="ramt">'+fmt(x.e.amount)+'</span>'
-        + '<button class="small warn" onclick="writeOff(\''+x.j.id+'\',\''+x.e.id+'\')">Хасах</button>'
-        + '</div></div>';
+        + '<button class="small warn" onclick="ui={off:\''+x.e.id+'\'};render()">Хасах</button>'
+        + '</div></div>'
+        + (ui.off === x.e.id ? '<div class="inf">'
+            + '<input id="offNote" placeholder="Шалтгаан (гэмтсэн, эвдэрсэн, алдагдсан)" value="Гэмтсэн">'
+            + '<div class="btns"><button class="btn" onclick="writeOff(\''+x.j.id+'\',\''+x.e.id+'\')">Хасах</button>'
+            + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>' : '');
     });
   }
 
@@ -635,10 +886,10 @@ function assetsView(){
 function writeOff(jid, eid){
   const j = jobs.find(x=>x.id===jid); if(!j) return;
   const e = j.expenses.find(x=>x.id===eid); if(!e) return;
-  const note = prompt('"'+e.desc+'" — шалтгаан (гэмтсэн, эвдэрсэн, алдагдсан…):', 'Гэмтсэн');
-  if(note === null) return;
+  const el = document.getElementById('offNote');
   e.writtenOff = true;
-  e.offNote = note.trim();
+  e.offNote = el ? el.value.trim() : 'Гэмтсэн';
+  ui = {};
   e.offDate = today();
   save(); render();
 }
@@ -657,13 +908,13 @@ function toggleDone(){
   save(); render();
 }
 
-function openJob(id){ openId=id; tab='exp'; editContract=false; render(); }
+function openJob(id){ openId=id; tab='exp'; editContract=false; ui={}; pickOpen=false; render(); }
 
 function addJob(){
   const name = document.getElementById('nName').value.trim();
   const c = num(document.getElementById('nContract').value);
   if(!name || !(c>0)){ alert('Ажлын нэр болон гэрээний дүнг оруулна уу.'); return; }
-  jobs.unshift({id:uid(), name, contract:c, type:newType, incomes:[], expenses:[], labor:[]});
+  jobs.unshift({id:uid(), name, contract:c, type:newType, incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[]});
   newJob=false; save(); render();
 }
 
@@ -702,18 +953,73 @@ function setProgress(v){
   save(); render();
 }
 
-function addLabor(){
+function addAttend(){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
-  const p = parseFloat(String(document.getElementById('lPeople').value).replace(',','.'));
-  if(!(p>0)){ alert('Хүний тоог оруулна уу.'); return; }
+  const wid = document.getElementById('lWorker').value;
+  const d = parseFloat(String(document.getElementById('lDays').value).replace(',','.'));
+  if(!(d>0)){ alert('Өдрийн тоог оруулна уу.'); return; }
   j.labor = j.labor || [];
-  j.labor.push({
-    id: uid(),
-    desc: document.getElementById('lDesc').value.trim(),
-    people: p,
-    date: document.getElementById('eDate').value || today()
-  });
+  j.labor.push({id: uid(), workerId: wid, people: d,
+    date: document.getElementById('eDate').value || today()});
   save(); render();
+}
+
+function addWorker(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const name = document.getElementById('waName').value.trim();
+  const r = num(document.getElementById('waRate').value) || 0;
+  if(!name){ alert('Нэрээ оруулна уу.'); return; }
+  j.workers = j.workers || [];
+  const rid = rosterAdd(name, r);
+  j.workers.push({id: uid(), rid, name, rate: r});
+  save(); ui={}; render();
+}
+
+function saveWorkerEdit(wid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const w = (j.workers||[]).find(x=>x.id===wid); if(!w) return;
+  const name = document.getElementById('weName').value.trim();
+  const r = num(document.getElementById('weRate').value);
+  if(name) w.name = name;
+  if(r>=0) w.rate = r;
+  save(); ui={}; render();
+}
+
+function delWorker(wid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.workers = (j.workers||[]).filter(x=>x.id!==wid);
+  j.labor = (j.labor||[]).filter(e=>e.workerId!==wid);
+  save(); ui={}; render();
+}
+
+function payWage(wid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const w = (j.workers||[]).find(x=>x.id===wid); if(!w) return;
+  const d = parseFloat(String(document.getElementById('payDays').value).replace(',','.'));
+  if(!(d>0)){ alert('Өдрийн тоог оруулна уу.'); return; }
+  const dt = document.getElementById('payDate').value || today();
+  const amount = d * w.rate;
+  const eid = uid();
+  j.wagePays = j.wagePays || [];
+  j.wagePays.push({id: uid(), workerId: wid, days: d, amount, date: dt, expenseId: eid});
+  j.expenses.push({id: eid, desc: 'Цалин — '+w.name+' ('+nd(d)+' өдөр)', amount,
+    date: dt, cat: 'wage', asset: false});
+  save(); ui={}; render();
+}
+
+function payBonus(wid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const w = (j.workers||[]).find(x=>x.id===wid); if(!w) return;
+  const a = num(document.getElementById('bonAmt').value);
+  if(!(a>0)){ alert('Дүнг оруулна уу.'); return; }
+  const note = document.getElementById('bonNote').value.trim();
+  const dt = document.getElementById('bonDate').value || today();
+  const eid = uid();
+  j.bonuses = j.bonuses || [];
+  j.bonuses.push({id: uid(), workerId: wid, amount: a, note, date: dt, expenseId: eid});
+  j.expenses.push({id: eid, desc: 'Урамшуулал — '+w.name+(note?' ('+note+')':''), amount: a,
+    date: dt, cat: 'wage', asset: false});
+  save(); ui={}; render();
 }
 
 function delLabor(lid){
@@ -724,7 +1030,11 @@ function delLabor(lid){
 
 function delEntry(eid){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
-  if(tab==='exp') j.expenses = j.expenses.filter(e=>e.id!==eid);
+  if(tab==='exp'){
+    j.expenses = j.expenses.filter(e=>e.id!==eid);
+    j.wagePays = (j.wagePays||[]).filter(p=>p.expenseId!==eid);
+    j.bonuses = (j.bonuses||[]).filter(b=>b.expenseId!==eid);
+  }
   else j.incomes = j.incomes.filter(e=>e.id!==eid);
   save(); render();
 }
@@ -738,35 +1048,38 @@ function saveContract(){
 
 function delJob(){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
-  if(!confirm('"'+j.name+'" ажлыг бүх бичилттэй нь устгах уу?')) return;
   jobs = jobs.filter(x=>x.id!==openId); openId=null;
   if(view==='done' && jobs.filter(x=>x.done).length===0) view='list';
   save(); render();
 }
 
 function exportData(){
-  const txt = JSON.stringify(jobs);
+  const txt = JSON.stringify({jobs, roster});
   navigator.clipboard.writeText(txt).then(
     ()=>alert('Өгөгдөл хуулагдлаа. Тэмдэглэлдээ хадгалаарай.'),
-    ()=>prompt('Доорх текстийг хуулж аваарай:', txt)
+    ()=>{ ui = {exp: txt}; render(); }
   );
 }
 
 function importData(){
-  const txt = prompt('Өмнө хуулсан өгөгдлөө энд буулгана уу:');
+  const el = document.getElementById('impBox');
+  if(!el){ ui = {imp:1}; render(); return; }
+  const txt = el.value.trim();
   if(!txt) return;
   try{
-    const d = JSON.parse(txt);
+    const parsed = JSON.parse(txt);
+    const d = Array.isArray(parsed) ? parsed : parsed.jobs;
     if(!Array.isArray(d)) throw 0;
-    load2(d); save(); render();
+    if(parsed && parsed.roster){ roster = parsed.roster; saveRoster(); }
+    load2(d); save(); ui={}; render();
   }catch(e){ alert('Өгөгдөл буруу байна.'); }
 }
 function load2(d){
-  jobs = d.map(j=>({...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[],
+  jobs = d.map(j=>({...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[], workers:j.workers||[], wagePays:j.wagePays||[], bonuses:j.bonuses||[],
     expenses:(j.expenses||[]).map(e=>({...e, asset: !!e.asset}))}));
 }
 
-load(); render();
+load(); loadRoster(); render();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{}));
