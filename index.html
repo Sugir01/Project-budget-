@@ -509,6 +509,31 @@ function detailView(j){
       + (bonusTotal(j)>0 ? ' · Урамшуулал '+fmt(bonusTotal(j)) : '')
       + ' — зардалд автоматаар бүртгэгдсэн.</div>';
 
+    // албан тушаалаар
+    const byRole = {};
+    W.forEach(w => {
+      const r = w.role || 'Тодорхойгүй';
+      const d = wkDays(j, w.id);
+      if(!byRole[r]) byRole[r] = {days:0, n:0, wage:0};
+      byRole[r].days += d; byRole[r].n++; byRole[r].wage += d * w.rate;
+    });
+    const roleRows = Object.keys(byRole).map(k=>({k, d:byRole[k].days, n:byRole[k].n, wg:byRole[k].wage}))
+      .sort((a,b)=>b.d-a.d);
+    if(roleRows.some(r=>r.d>0)){
+      const mx = Math.max.apply(null, roleRows.map(r=>r.d));
+      h += '<div class="card" style="margin-bottom:16px"><div style="font-weight:600;margin-bottom:10px">Албан тушаалаар</div>';
+      roleRows.forEach(r => {
+        h += '<div style="margin-bottom:11px">'
+          + '<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-bottom:5px">'
+          + '<span>'+esc(r.k)+' <span style="color:var(--muted);font-size:12.5px">· '+r.n+' хүн</span></span>'
+          + '<span style="font-weight:600;white-space:nowrap">'+nd(r.d)+' хүн өдөр</span></div>'
+          + '<div style="height:6px;background:var(--track);border-radius:4px;overflow:hidden">'
+          + '<i style="display:block;height:100%;width:'+(mx?r.d/mx*100:0)+'%;background:var(--blue)"></i></div>'
+          + '<div style="font-size:12px;color:var(--muted);margin-top:4px">Ногдсон цалин '+fmt(r.wg)+'</div></div>';
+      });
+      h += '</div>';
+    }
+
     // ажилчид
     h += '<div class="secttl" style="margin:0 0 8px">Ажилчид</div>';
     if(W.length === 0 && !ui.wAdd){
@@ -516,13 +541,14 @@ function detailView(j){
     }
     W.forEach(w => {
       if(ui.wEdit === w.id){
-        h += wForm('we', w.name, w.rate, 'Хадгалах', "saveWorkerEdit('"+w.id+"')");
+        h += wForm('we', w.name, w.rate, 'Хадгалах', "saveWorkerEdit('"+w.id+"')", w.role);
         return;
       }
       const d = wkDays(j,w.id), pd = wkPaidDays(j,w.id), due = wkDue(j,w), bn = wkBonus(j,w.id);
       h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
         + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
-        + '<span style="font-weight:600;font-size:15.5px">'+esc(w.name)+'</span>'
+        + '<span style="font-weight:600;font-size:15.5px">'+esc(w.name)
+        + (w.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(w.role)+'</span>' : '')+'</span>'
         + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(w.rate)+' / өдөр</span></div>'
         + '<div class="sub" style="margin:7px 0 10px">Ажилласан '+nd(d)+' өдөр · Олгосон '+nd(pd)
         + ' өдөр · Үлдэгдэл <b style="color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</b>'
@@ -683,9 +709,13 @@ function rosterStats(r){
   return {days, paid, njobs};
 }
 
-function wForm(idp, name, rate, okLabel, okFn){
+const ROLES = ['Инженер','Техникч','Ахлах','Гагнуурчин','Цахилгаанчин','Жолооч','Туслах ажилтан'];
+
+function wForm(idp, name, rate, okLabel, okFn, role){
   return '<div class="inf">'
     + '<input id="'+idp+'Name" placeholder="Ажилтны нэр" value="'+esc(name)+'">'
+    + '<input id="'+idp+'Role" list="roleList" placeholder="Албан тушаал" value="'+esc(role||'')+'">'
+    + '<datalist id="roleList">'+ROLES.map(r=>'<option value="'+r+'">').join('')+'</datalist>'
     + '<input id="'+idp+'Rate" placeholder="Өдрийн хөлс (₮)" inputmode="numeric" oninput="liveNum(this)" value="'
     + (rate ? group(rate) : '')+'">'
     + '<div class="btns"><button class="btn" onclick="'+okFn+'">'+okLabel+'</button>'
@@ -706,13 +736,14 @@ function rosterView(){
   }
   roster.forEach(r => {
     if(ui.rEdit === r.id){
-      h += wForm('re', r.name, r.rate, 'Хадгалах', "saveRosterEdit('"+r.id+"')");
+      h += wForm('re', r.name, r.rate, 'Хадгалах', "saveRosterEdit('"+r.id+"')", r.role);
       return;
     }
     const st = rosterStats(r);
     h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
       + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
-      + '<span style="font-weight:600;font-size:15.5px">'+esc(r.name)+'</span>'
+      + '<span style="font-weight:600;font-size:15.5px">'+esc(r.name)
+      + (r.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(r.role)+'</span>' : '')+'</span>'
       + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(r.rate)+' / өдөр</span></div>'
       + '<div class="sub" style="margin:7px 0 10px">'+st.njobs+' ажилд · '+nd(st.days)
       + ' өдөр ажилласан · '+fmt(st.paid)+' цалин авсан</div>'
@@ -734,7 +765,7 @@ function addRoster(){
   const name = document.getElementById('raName').value.trim();
   const r = num(document.getElementById('raRate').value) || 0;
   if(!name){ alert('Нэрээ оруулна уу.'); return; }
-  roster.push({id: uid(), name, rate: r});
+  roster.push({id: uid(), name, rate: r, role: document.getElementById('raRole').value.trim()});
   saveRoster(); ui={}; render();
 }
 
@@ -744,6 +775,7 @@ function saveRosterEdit(rid){
   const v = num(document.getElementById('reRate').value);
   if(name) r.name = name;
   if(v>=0) r.rate = v;
+  r.role = document.getElementById('reRole').value.trim();
   saveRoster(); ui={}; render();
 }
 
@@ -752,10 +784,10 @@ function delRoster(rid){
   saveRoster(); ui={}; render();
 }
 
-function rosterAdd(name, rate){
+function rosterAdd(name, rate, role){
   const hit = roster.find(r => r.name.toLowerCase() === name.toLowerCase());
   if(hit) return hit.id;
-  const r = {id: uid(), name, rate};
+  const r = {id: uid(), name, rate, role};
   roster.push(r); saveRoster();
   return r.id;
 }
@@ -765,7 +797,7 @@ function importWorker(rid){
   const r = roster.find(x=>x.id===rid); if(!r) return;
   j.workers = j.workers || [];
   if(j.workers.some(w => w.rid === r.id || w.name === r.name)) return;
-  j.workers.push({id: uid(), rid: r.id, name: r.name, rate: r.rate});
+  j.workers.push({id: uid(), rid: r.id, name: r.name, rate: r.rate, role: r.role});
   save(); render();
 }
 
@@ -970,8 +1002,9 @@ function addWorker(){
   const r = num(document.getElementById('waRate').value) || 0;
   if(!name){ alert('Нэрээ оруулна уу.'); return; }
   j.workers = j.workers || [];
-  const rid = rosterAdd(name, r);
-  j.workers.push({id: uid(), rid, name, rate: r});
+  const role = document.getElementById('waRole').value.trim();
+  const rid = rosterAdd(name, r, role);
+  j.workers.push({id: uid(), rid, name, rate: r, role});
   save(); ui={}; render();
 }
 
@@ -982,6 +1015,7 @@ function saveWorkerEdit(wid){
   const r = num(document.getElementById('weRate').value);
   if(name) w.name = name;
   if(r>=0) w.rate = r;
+  w.role = document.getElementById('weRole').value.trim();
   save(); ui={}; render();
 }
 
