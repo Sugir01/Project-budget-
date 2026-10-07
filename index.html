@@ -406,9 +406,9 @@ function render(){
   const job = jobs.find(j=>j.id===openId);
   let html;
   if(job) html = detailView(job);
-  else if(view === 'assets') html = assetsView();
-  else if(view === 'done') html = doneView();
-  else if(view === 'types') html = typesView();
+  else if(view === 'assets' && isAdmin()) html = assetsView();
+  else if(view === 'done' && isAdmin()) html = doneView();
+  else if(view === 'types' && isAdmin()) html = typesView();
   else if(view === 'roster') html = rosterView();
   else html = listView();
   document.getElementById('app').innerHTML = html;
@@ -418,11 +418,12 @@ function render(){
 function listView(){
   const active = jobs.filter(j=>!j.done);
   const done = jobs.filter(j=>j.done);
-  const tC = jobs.reduce((s,j)=>s+j.contract,0);
-  const tS = jobs.reduce((s,j)=>s+spent(j),0);
-  const tE = jobs.reduce((s,j)=>s+earned(j),0);
-  const tA = jobs.reduce((s,j)=>s+assetVal(j),0);
-  const tW = jobs.reduce((s,j)=>s+workDays(j),0);
+  const tC = active.reduce((s,j)=>s+j.contract,0);
+  const tS = active.reduce((s,j)=>s+spent(j),0);
+  const tE = active.reduce((s,j)=>s+earned(j),0);
+  const tA = active.reduce((s,j)=>s+assetVal(j),0);
+  const tW = active.reduce((s,j)=>s+workDays(j),0);
+  const allA = jobs.reduce((s,j)=>s+assetVal(j),0);
 
   let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">'
     + '<span style="font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
@@ -443,7 +444,7 @@ function listView(){
       + '<button class="btn" onclick="migrateLocal()">Сервер рүү шилжүүлэх</button></div>';
   }
 
-  h += '<div class="hero"><div style="font-size:13px;opacity:.6">Бүх ажлын нэгдсэн дүн</div>'
+  h += '<div class="hero"><div style="font-size:13px;opacity:.6">Явагдаж буй ажлуудын нэгдсэн дүн</div>'
     + '<div class="pairs">' + pair('Гэрээнээс гарах ашиг', tC-tS) + pair('Орлогоос гарсан баланс', tE-tS) + '</div>'
     + '<div class="meta">'
     + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(tC)+'</div></div>'
@@ -454,23 +455,27 @@ function listView(){
     + '</div></div>';
 
   const allInc = [], allExp = [];
-  jobs.forEach(j=>{ allInc.push(...j.incomes); allExp.push(...j.expenses); });
+  active.forEach(j=>{ allInc.push(...j.incomes); allExp.push(...j.expenses); });
   h += chartSvg({incomes: allInc, expenses: allExp});
 
-  h += '<button class="navbtn" onclick="view=\'assets\';render()">'
-     + '<span>Үндсэн хөрөнгө</span><span style="color:var(--asset)">'+fmt(tA)+' ›</span></button>';
+  if(isAdmin()){
+    h += '<button class="navbtn" onclick="view=\'assets\';render()">'
+      + '<span>Үндсэн хөрөнгө</span><span style="color:var(--asset)">'+fmt(allA)+' ›</span></button>';
+  }
 
   h += '<button class="navbtn" onclick="view=\'roster\';render()">'
      + '<span>Ажилчид</span><span style="color:var(--muted)">'+roster.length+' хүн ›</span></button>';
 
-  h += '<button class="navbtn" onclick="view=\'types\';render()">'
-     + '<span>Ажлын төрлөөр</span><span style="color:var(--muted)">Угсралт / Зураг төсөл ›</span></button>';
+  if(isAdmin()){
+    h += '<button class="navbtn" onclick="view=\'types\';render()">'
+      + '<span>Ажлын төрлөөр</span><span style="color:var(--muted)">Угсралт / Зураг төсөл ›</span></button>';
 
-  if(done.length>0){
-    const dp = done.reduce((s,j)=>s+(earned(j)-spent(j)),0);
-    h += '<button class="navbtn" onclick="view=\'done\';render()">'
-       + '<span>Дууссан ажил ('+done.length+')</span>'
-       + '<span class="'+(dp<0?'neg':'pos')+'">'+fmt(dp)+' ›</span></button>';
+    if(done.length>0){
+      const dp = done.reduce((s,j)=>s+(j.contract-spent(j)),0);
+      h += '<button class="navbtn" onclick="view=\'done\';render()">'
+        + '<span>Дууссан ажил ('+done.length+')</span>'
+        + '<span class="'+(dp<0?'neg':'pos')+'">'+fmt(dp)+' ›</span></button>';
+    }
   }
 
   if(newJob){
@@ -1078,9 +1083,23 @@ function setType(k){
 
 function doneView(){
   const done = jobs.filter(j=>j.done);
-  const tp = done.reduce((s,j)=>s+(earned(j)-spent(j)),0);
+  const dC = done.reduce((s,j)=>s+j.contract,0);
+  const dS = done.reduce((s,j)=>s+spent(j),0);
+  const dE = done.reduce((s,j)=>s+earned(j),0);
+  const dA = done.reduce((s,j)=>s+assetVal(j),0);
+  const dW = done.reduce((s,j)=>s+workDays(j),0);
+
   let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>'
-    + '<div class="total"><span>Дууссан ажлуудын ашиг</span><b class="'+(tp<0?'neg':'pos')+'">'+fmt(tp)+'</b></div>';
+    + '<div class="hero"><div style="font-size:13px;opacity:.6">Дууссан '+done.length
+    + ' ажлын нэгдсэн дүн</div>'
+    + '<div class="pairs">' + pair('Гэрээнээс гарсан ашиг', dC-dS) + pair('Орлогоос гарсан баланс', dE-dS) + '</div>'
+    + '<div class="meta">'
+    + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(dC)+'</div></div>'
+    + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(dE)+'</div></div>'
+    + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(dS)+'</div></div>'
+    + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(dA)+'</div></div>'
+    + (dW>0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+dW+'</div></div>' : '')
+    + '</div></div>';
   if(done.length===0) return h + '<div class="note">Дууссан ажил алга.</div>';
   done.forEach(j=>{
     const s = spent(j), ib = earned(j) - s;
