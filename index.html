@@ -139,6 +139,40 @@ input[type=range]{width:100%;accent-color:var(--blue);padding:0;border:none;back
 </head>
 <body>
 <div id="app"></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+         createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+         collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where,
+         arrayUnion, arrayRemove, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAePVA0CSv3lyKaHljscCedI1qA2rCMoIk",
+  authDomain: "ajliin-zardal.firebaseapp.com",
+  projectId: "ajliin-zardal",
+  storageBucket: "ajliin-zardal.firebasestorage.app",
+  messagingSenderId: "37354445814",
+  appId: "1:37354445814:web:9b75ad784d1bff463e45d7"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+} catch (e) {
+  db = initializeFirestore(app, {});
+}
+
+window.FB = { auth, db, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut, collection, doc, setDoc, updateDoc,
+  deleteDoc, onSnapshot, query, where, arrayUnion, arrayRemove, deleteField };
+window.dispatchEvent(new Event('fb-ready'));
+</script>
+
 <script>
 const KEY = 'ajliin-zardal-v1';
 const RKEY = 'ajliin-ajilchid-v1';
@@ -163,24 +197,163 @@ function liveNum(el){
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-function load(){
-  try{ const raw = localStorage.getItem(KEY); if(raw) jobs = JSON.parse(raw); }catch(e){ jobs = []; }
-  jobs = jobs.map(j => ({
-    ...j,
-    contract: j.contract ?? j.budget ?? 0,
-    incomes: j.incomes||[],
-    labor: j.labor||[],
-    workers: j.workers||[],
-    wagePays: j.wagePays||[],
-    bonuses: j.bonuses||[],
-    expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
-  }));
+const norm = j => ({
+  ...j,
+  contract: j.contract ?? j.budget ?? 0,
+  incomes: j.incomes||[],
+  labor: j.labor||[],
+  workers: j.workers||[],
+  wagePays: j.wagePays||[],
+  bonuses: j.bonuses||[],
+  members: j.members||[],
+  expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
+});
+
+const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses'];
+const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt'];
+
+let me = null, booted = false, syncErr = '', pendingRender = false;
+let shadow = {}, rshadow = {};
+
+function legacyJobs(){
+  try{ return JSON.parse(localStorage.getItem(KEY)||'[]'); }catch(e){ return []; }
 }
-function loadRoster(){
-  try{ const raw = localStorage.getItem(RKEY); if(raw) roster = JSON.parse(raw); }catch(e){ roster = []; }
+
+function cloudRender(){
+  const ae = document.activeElement;
+  if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)){ pendingRender = true; return; }
+  render();
 }
-function saveRoster(){ try{ localStorage.setItem(RKEY, JSON.stringify(roster)); }catch(e){} }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(jobs)); }catch(e){ alert('Хадгалж чадсангүй.'); } }
+
+function jobDiff(prev, j){
+  const u = {}, extra = [];
+  FIELDS.forEach(k => {
+    if(JSON.stringify(prev[k]) !== JSON.stringify(j[k])) u[k] = j[k] === undefined ? FB.deleteField() : j[k];
+  });
+  LISTS.forEach(k => {
+    const a = prev[k]||[], b = j[k]||[];
+    if(JSON.stringify(a) === JSON.stringify(b)) return;
+    const ai = new Map(a.map(x=>[x.id,JSON.stringify(x)])), bi = new Map(b.map(x=>[x.id,1]));
+    const added = b.filter(x => !ai.has(x.id));
+    const removed = a.filter(x => !bi.has(x.id));
+    const edited = b.some(x => ai.has(x.id) && ai.get(x.id) !== JSON.stringify(x));
+    if(edited || (added.length && removed.length)) u[k] = b;
+    else if(added.length) u[k] = FB.arrayUnion.apply(null, added);
+    else if(removed.length) u[k] = FB.arrayRemove.apply(null, removed);
+  });
+  return u;
+}
+
+function save(){
+  if(!me || !window.FB) return;
+  jobs.forEach(j => {
+    const cur = JSON.stringify(j);
+    if(shadow[j.id] === cur) return;
+    const prev = shadow[j.id] ? JSON.parse(shadow[j.id]) : null;
+    shadow[j.id] = cur;
+    const ref = FB.doc(FB.db, 'jobs', j.id);
+    const p = prev ? FB.updateDoc(ref, jobDiff(prev, j)) : FB.setDoc(ref, j);
+    p.catch(e => { syncErr = e.code || 'алдаа'; render(); });
+  });
+  Object.keys(shadow).forEach(id => {
+    if(!jobs.some(j => j.id === id)){
+      delete shadow[id];
+      FB.deleteDoc(FB.doc(FB.db, 'jobs', id)).catch(e => { syncErr = e.code||'алдаа'; });
+    }
+  });
+}
+
+function saveRoster(){
+  if(!me || !window.FB) return;
+  roster.forEach(r => {
+    const cur = JSON.stringify(r);
+    if(rshadow[r.id] === cur) return;
+    rshadow[r.id] = cur;
+    FB.setDoc(FB.doc(FB.db, 'roster', r.id), {...r, owner: r.owner || me})
+      .catch(e => { syncErr = e.code||'алдаа'; });
+  });
+  Object.keys(rshadow).forEach(id => {
+    if(!roster.some(r => r.id === id)){
+      delete rshadow[id];
+      FB.deleteDoc(FB.doc(FB.db, 'roster', id)).catch(()=>{});
+    }
+  });
+}
+
+function subscribe(){
+  const F = window.FB;
+  F.onSnapshot(
+    F.query(F.collection(F.db, 'jobs'), F.where('members', 'array-contains', me)),
+    snap => {
+      jobs = snap.docs.map(d => norm({...d.data(), id: d.id}))
+        .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+      shadow = {}; jobs.forEach(j => shadow[j.id] = JSON.stringify(j));
+      booted = true; syncErr = ''; cloudRender();
+    },
+    e => { syncErr = e.code || 'холболтын алдаа'; booted = true; render(); }
+  );
+  F.onSnapshot(
+    F.query(F.collection(F.db, 'roster'), F.where('owner', '==', me)),
+    snap => {
+      roster = snap.docs.map(d => ({...d.data(), id: d.id}));
+      rshadow = {}; roster.forEach(r => rshadow[r.id] = JSON.stringify(r));
+      cloudRender();
+    },
+    ()=>{}
+  );
+}
+
+function doLogin(signup){
+  const F = window.FB;
+  const em = document.getElementById('authEmail').value.trim().toLowerCase();
+  const pw = document.getElementById('authPass').value;
+  if(!em || pw.length < 6){ ui.authErr = 'Имэйл болон 6-аас дээш тэмдэгт бүхий нууц үг оруулна уу.'; render(); return; }
+  ui.authErr = ''; ui.authBusy = 1; render();
+  const fn = signup ? F.createUserWithEmailAndPassword : F.signInWithEmailAndPassword;
+  fn(F.auth, em, pw).catch(e => {
+    const m = {
+      'auth/invalid-credential':'Имэйл эсвэл нууц үг буруу байна.',
+      'auth/wrong-password':'Нууц үг буруу байна.',
+      'auth/user-not-found':'Ийм хэрэглэгч алга. "Бүртгүүлэх" дарна уу.',
+      'auth/email-already-in-use':'Энэ имэйл бүртгэлтэй байна. "Нэвтрэх" дарна уу.',
+      'auth/weak-password':'Нууц үг хэт богино байна.',
+      'auth/invalid-email':'Имэйл буруу байна.',
+      'auth/network-request-failed':'Интернэт холболтоо шалгана уу.'
+    };
+    ui.authErr = m[e.code] || e.code;
+    ui.authBusy = 0; render();
+  });
+}
+
+function logout(){
+  if(window.FB) window.FB.signOut(window.FB.auth);
+}
+
+function authView(){
+  return '<div style="padding:40px 0 0"><div style="text-align:center;margin-bottom:26px">'
+    + '<div style="font-size:22px;font-weight:700">Ажлын зардал</div>'
+    + '<div style="color:var(--muted);font-size:14px;margin-top:5px">Имэйлээрээ нэвтэрч ажлаа үргэлжлүүлнэ</div></div>'
+    + '<div class="card">'
+    + '<input id="authEmail" type="email" inputmode="email" placeholder="Имэйл" style="margin-bottom:9px" value="'+esc(ui.lastEmail||'')+'">'
+    + '<input id="authPass" type="password" placeholder="Нууц үг" style="margin-bottom:12px">'
+    + (ui.authErr ? '<div class="warn" style="margin:0 0 12px">'+esc(ui.authErr)+'</div>' : '')
+    + '<button class="btn" style="margin-bottom:8px" onclick="doLogin(false)">'
+    + (ui.authBusy ? 'Түр хүлээнэ үү…' : 'Нэвтрэх')+'</button>'
+    + '<button class="btn ghost" style="width:100%" onclick="doLogin(true)">Шинээр бүртгүүлэх</button>'
+    + '</div>'
+    + '<div class="note" style="margin-top:14px;text-align:center">Анх удаа бол "Шинээр бүртгүүлэх" дарна уу.</div></div>';
+}
+
+function migrateLocal(){
+  const old = legacyJobs();
+  if(!old.length) return;
+  old.forEach((j, i) => {
+    const nj = norm({...j, owner: me, members: [me], createdAt: Date.now() - (old.length - i) * 1000});
+    FB.setDoc(FB.doc(FB.db, 'jobs', nj.id || uid()), nj).catch(e => { syncErr = e.code||'алдаа'; });
+  });
+  try{ localStorage.setItem(KEY + '-migrated', '1'); }catch(e){}
+  ui = {}; render();
+}
 
 const sum = a => a.reduce((s,e)=>s+e.amount,0);
 const spent = j => sum(j.expenses);
@@ -223,6 +396,11 @@ function pair(label, value){
 }
 
 function render(){
+  if(!window.FB){ document.getElementById('app').innerHTML =
+    '<div class="note" style="padding:40px 0;text-align:center">Ачаалж байна…</div>'; return; }
+  if(!me){ document.getElementById('app').innerHTML = authView(); return; }
+  if(!booted){ document.getElementById('app').innerHTML =
+    '<div class="note" style="padding:40px 0;text-align:center">Өгөгдөл ачаалж байна…</div>'; return; }
   const job = jobs.find(j=>j.id===openId);
   let html;
   if(job) html = detailView(job);
@@ -244,7 +422,26 @@ function listView(){
   const tA = jobs.reduce((s,j)=>s+assetVal(j),0);
   const tW = jobs.reduce((s,j)=>s+workDays(j),0);
 
-  let h = '<div class="hero"><div style="font-size:13px;opacity:.6">Бүх ажлын нэгдсэн дүн</div>'
+  let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">'
+    + '<span style="font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+    + esc(me)+'</span><button class="small" onclick="logout()">Гарах</button></div>';
+
+  if(syncErr){
+    h += '<div class="warn" style="margin:0 0 12px">Сервертэй холбогдоход алдаа гарлаа ('+esc(syncErr)
+      + '). Оруулсан бичилт интернэт сэргэмэгц илгээгдэнэ.</div>';
+  }
+
+  let lg = [];
+  try{ lg = localStorage.getItem(KEY+'-migrated') ? [] : legacyJobs(); }catch(e){}
+  if(lg.length){
+    h += '<div class="card" style="margin-bottom:14px"><div style="font-weight:600;margin-bottom:6px">'
+      + 'Хуучин өгөгдөл олдлоо</div>'
+      + '<div class="sub" style="margin-bottom:10px">Энэ утсанд сервергүй үед бүртгэсэн '+lg.length
+      + ' ажил байна. Сервер рүү шилжүүлбэл бусад төхөөрөмж дээр ч харагдана.</div>'
+      + '<button class="btn" onclick="migrateLocal()">Сервер рүү шилжүүлэх</button></div>';
+  }
+
+  h += '<div class="hero"><div style="font-size:13px;opacity:.6">Бүх ажлын нэгдсэн дүн</div>'
     + '<div class="pairs">' + pair('Гэрээнээс гарах ашиг', tC-tS) + pair('Орлогоос гарсан баланс', tE-tS) + '</div>'
     + '<div class="meta">'
     + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(tC)+'</div></div>'
@@ -461,7 +658,8 @@ function detailView(j){
     + '<div><div class="mlabel">Хүн өдөр</div><div class="mval">'+nd(manDays(j))+'</div></div></div>'
     + '<label class="check" style="margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line)">'
     + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>'
-    + 'Ажил дууссан</label></div>';
+    + 'Ажил дууссан</label>'
+    + memberBox(j) + '</div>';
 
   h += progressCard(j);
   h += chartSvg(j);
@@ -782,7 +980,7 @@ function addRoster(){
   const name = document.getElementById('raName').value.trim();
   const r = num(document.getElementById('raRate').value) || 0;
   if(!name){ alert('Нэрээ оруулна уу.'); return; }
-  roster.push({id: uid(), name, rate: r, role: document.getElementById('raRole').value.trim()});
+  roster.push({id: uid(), name, rate: r, role: document.getElementById('raRole').value.trim(), owner: me});
   saveRoster(); ui={}; render();
 }
 
@@ -804,7 +1002,7 @@ function delRoster(rid){
 function rosterAdd(name, rate, role){
   const hit = roster.find(r => r.name.toLowerCase() === name.toLowerCase());
   if(hit) return hit.id;
-  const r = {id: uid(), name, rate, role};
+  const r = {id: uid(), name, rate, role, owner: me};
   roster.push(r); saveRoster();
   return r.id;
 }
@@ -950,6 +1148,48 @@ function restoreAsset(jid, eid){
   save(); render();
 }
 
+function memberBox(j){
+  const owner = !j.owner || j.owner === me;
+  const ms = j.members || [];
+  let h = '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
+    + '<div class="mlabel" style="margin-bottom:7px">Хандах эрхтэй хүмүүс</div>';
+  ms.forEach(m => {
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0">'
+      + '<span style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m)
+      + (m === j.owner ? ' <span style="color:var(--muted);font-size:12px">· эзэн</span>' : '')+'</span>'
+      + (owner && m !== j.owner
+          ? '<button class="x" onclick="delMember(\''+esc(m)+'\')">×</button>' : '')+'</div>';
+  });
+  if(owner){
+    if(ui.mAdd){
+      h += '<div class="inf" style="margin-top:8px">'
+        + '<input id="memEmail" type="email" inputmode="email" placeholder="Инженерийн имэйл">'
+        + '<div class="btns"><button class="btn" onclick="addMember()">Нэмэх</button>'
+        + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+    } else {
+      h += '<button class="small" style="margin-top:8px" onclick="ui={mAdd:1};render()">+ Хүн нэмэх</button>';
+    }
+    h += '<div class="rdate" style="margin-top:8px">Нэмсэн хүн энэ ажлыг өөрийн утсан дээрээ харж, '
+      + 'зардал, ирц оруулна. Тухайн хүн эхлээд аппд ижил имэйлээр бүртгүүлсэн байх ёстой.</div>';
+  }
+  return h + '</div>';
+}
+
+function addMember(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const em = document.getElementById('memEmail').value.trim().toLowerCase();
+  if(!em || em.indexOf('@') < 0){ alert('Имэйл буруу байна.'); return; }
+  j.members = j.members || [];
+  if(!j.members.includes(em)) j.members.push(em);
+  save(); ui={}; render();
+}
+
+function delMember(em){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.members = (j.members||[]).filter(m => m !== em);
+  save(); render();
+}
+
 function toggleDone(){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   if(j.done){ delete j.done; delete j.doneDate; }
@@ -963,7 +1203,8 @@ function addJob(){
   const name = document.getElementById('nName').value.trim();
   const c = num(document.getElementById('nContract').value);
   if(!name || !(c>0)){ alert('Ажлын нэр болон гэрээний дүнг оруулна уу.'); return; }
-  jobs.unshift({id:uid(), name, contract:c, type:newType, incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[]});
+  jobs.unshift({id:uid(), name, contract:c, type:newType, owner:me, members:[me], createdAt:Date.now(),
+    incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[]});
   newJob=false; save(); render();
 }
 
@@ -1126,11 +1367,28 @@ function importData(){
   }catch(e){ alert('Өгөгдөл буруу байна.'); }
 }
 function load2(d){
-  jobs = d.map(j=>({...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[], workers:j.workers||[], wagePays:j.wagePays||[], bonuses:j.bonuses||[],
-    expenses:(j.expenses||[]).map(e=>({...e, asset: !!e.asset}))}));
+  jobs = d.map(j=>({owner: me, members: [me], createdAt: Date.now(), ...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[], workers:j.workers||[], wagePays:j.wagePays||[], bonuses:j.bonuses||[],
+    expenses:(j.expenses||[]).map(e=>({...e, asset: !!e.asset})),
+    members: (j.members && j.members.length) ? j.members : [me],
+    owner: j.owner || me}));
 }
 
-load(); loadRoster(); render();
+function boot(){
+  const F = window.FB;
+  F.onAuthStateChanged(F.auth, u => {
+    me = u ? (u.email||'').toLowerCase() : null;
+    jobs = []; roster = []; shadow = {}; rshadow = {};
+    booted = !me; ui = {}; openId = null; view = 'list';
+    if(me){ try{ localStorage.setItem('last-email', me); }catch(e){} subscribe(); }
+    render();
+  });
+}
+try{ ui.lastEmail = localStorage.getItem('last-email')||''; }catch(e){}
+render();
+if(window.FB) boot(); else window.addEventListener('fb-ready', boot);
+document.addEventListener('focusout', () => {
+  if(pendingRender) setTimeout(() => { if(pendingRender){ pendingRender = false; render(); } }, 120);
+});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{}));

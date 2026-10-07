@@ -1,4 +1,4 @@
-const CACHE = 'ajil-zardal-v2';
+const CACHE = 'ajil-zardal-v3';
 const ASSETS = ['./manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -21,11 +21,17 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
 
-  const isPage = req.mode === 'navigate' || req.destination === 'document'
-    || req.url.endsWith('/') || req.url.includes('index.html');
+  const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
+  const isLib = url.hostname === 'www.gstatic.com';
+
+  // Firebase-ийн өгөгдлийн хүсэлтэд огт хүрэхгүй
+  if (!sameOrigin && !isLib) return;
+
+  const isPage = sameOrigin && (req.mode === 'navigate' || req.destination === 'document'
+    || url.pathname.endsWith('/') || url.pathname.endsWith('index.html'));
 
   if (isPage) {
-    // Шинэ хувилбарыг эхлээд сүлжээнээс авна, амжилтгүй бол кэшнээс
     e.respondWith(
       fetch(req)
         .then(res => {
@@ -40,8 +46,10 @@ self.addEventListener('fetch', e => {
 
   e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+      }
       return res;
     }))
   );
