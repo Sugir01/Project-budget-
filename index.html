@@ -144,7 +144,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword,
          createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-         collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where,
+         collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where,
          arrayUnion, arrayRemove, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -168,7 +168,7 @@ try {
 }
 
 window.FB = { auth, db, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut, collection, doc, setDoc, updateDoc,
+  createUserWithEmailAndPassword, signOut, collection, doc, getDoc, setDoc, updateDoc,
   deleteDoc, onSnapshot, query, where, arrayUnion, arrayRemove, deleteField };
 window.dispatchEvent(new Event('fb-ready'));
 </script>
@@ -212,7 +212,8 @@ const norm = j => ({
 const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses'];
 const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt'];
 
-let me = null, booted = false, syncErr = '', pendingRender = false;
+let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
+const isAdmin = () => !!me && me === admin;
 let shadow = {}, rshadow = {};
 
 function legacyJobs(){
@@ -264,12 +265,12 @@ function save(){
 }
 
 function saveRoster(){
-  if(!me || !window.FB) return;
+  if(!me || !window.FB || !isAdmin()) return;
   roster.forEach(r => {
     const cur = JSON.stringify(r);
     if(rshadow[r.id] === cur) return;
     rshadow[r.id] = cur;
-    FB.setDoc(FB.doc(FB.db, 'roster', r.id), {...r, owner: r.owner || me})
+    FB.setDoc(FB.doc(FB.db, 'roster', r.id), {...r, owner: admin || me})
       .catch(e => { syncErr = e.code||'алдаа'; });
   });
   Object.keys(rshadow).forEach(id => {
@@ -293,7 +294,7 @@ function subscribe(){
     e => { syncErr = e.code || 'холболтын алдаа'; booted = true; render(); }
   );
   F.onSnapshot(
-    F.query(F.collection(F.db, 'roster'), F.where('owner', '==', me)),
+    F.query(F.collection(F.db, 'roster'), F.where('owner', '==', admin || me)),
     snap => {
       roster = snap.docs.map(d => ({...d.data(), id: d.id}));
       rshadow = {}; roster.forEach(r => rshadow[r.id] = JSON.stringify(r));
@@ -348,7 +349,8 @@ function migrateLocal(){
   const old = legacyJobs();
   if(!old.length) return;
   old.forEach((j, i) => {
-    const nj = norm({...j, owner: me, members: [me], createdAt: Date.now() - (old.length - i) * 1000});
+    const nj = norm({...j, owner: admin||me, members: (admin && admin!==me) ? [admin, me] : [me],
+      createdBy: me, createdAt: Date.now() - (old.length - i) * 1000});
     FB.setDoc(FB.doc(FB.db, 'jobs', nj.id || uid()), nj).catch(e => { syncErr = e.code||'алдаа'; });
   });
   try{ localStorage.setItem(KEY + '-migrated', '1'); }catch(e){}
@@ -659,6 +661,8 @@ function detailView(j){
     + '<label class="check" style="margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line)">'
     + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>'
     + 'Ажил дууссан</label>'
+    + (j.createdBy && j.createdBy !== j.owner
+        ? '<div class="rdate" style="margin-top:10px">Үүсгэсэн: '+esc(j.createdBy)+'</div>' : '')
     + memberBox(j) + '</div>';
 
   h += progressCard(j);
@@ -963,14 +967,20 @@ function rosterView(){
       + (st.open.length ? '<br>'+st.open.map(o=>esc(o.name)+': '+nd(o.days)+' өдөр ('+fmt(o.amt)+')').join('<br>') : '')
       + '</div>'
       + '<div style="display:flex;gap:8px">'
-      + '<button class="small" onclick="ui={rEdit:\''+r.id+'\'};render()">Засах</button>'
-      + '<button class="small warn" onclick="ui={rDel:\''+r.id+'\'};render()">Устгах</button></div>'
+      + (isAdmin()
+          ? '<button class="small" onclick="ui={rEdit:\''+r.id+'\'};render()">Засах</button>'
+            + '<button class="small warn" onclick="ui={rDel:\''+r.id+'\'};render()">Устгах</button>'
+          : '')+'</div>'
       + (ui.rDel === r.id
           ? confirmBox(esc(r.name)+' — жагсаалтаас устгах уу? Ажлууд дээрх бүртгэл хэвээр үлдэнэ.',
                        "delRoster('"+r.id+"')")
           : '')
       + '</div>';
   });
+  if(!isAdmin()){
+    h += '<div class="note" style="margin-top:10px">Энэ жагсаалтыг зөвхөн эзэн нь удирдана. Ажил дээрээ эндээс ажилтан сонгон нэмж болно.</div>';
+    return h;
+  }
   if(ui.rAdd) h += wForm('ra', '', 0, 'Нэмэх', 'addRoster()');
   else h += '<button class="btn" style="margin-top:8px" onclick="ui={rAdd:1};render()">+ Ажилтан нэмэх</button>';
   return h;
@@ -980,7 +990,7 @@ function addRoster(){
   const name = document.getElementById('raName').value.trim();
   const r = num(document.getElementById('raRate').value) || 0;
   if(!name){ alert('Нэрээ оруулна уу.'); return; }
-  roster.push({id: uid(), name, rate: r, role: document.getElementById('raRole').value.trim(), owner: me});
+  roster.push({id: uid(), name, rate: r, role: document.getElementById('raRole').value.trim(), owner: admin||me});
   saveRoster(); ui={}; render();
 }
 
@@ -1000,9 +1010,10 @@ function delRoster(rid){
 }
 
 function rosterAdd(name, rate, role){
+  if(!isAdmin()) return null;
   const hit = roster.find(r => r.name.toLowerCase() === name.toLowerCase());
   if(hit) return hit.id;
-  const r = {id: uid(), name, rate, role, owner: me};
+  const r = {id: uid(), name, rate, role, owner: admin||me};
   roster.push(r); saveRoster();
   return r.id;
 }
@@ -1203,7 +1214,9 @@ function addJob(){
   const name = document.getElementById('nName').value.trim();
   const c = num(document.getElementById('nContract').value);
   if(!name || !(c>0)){ alert('Ажлын нэр болон гэрээний дүнг оруулна уу.'); return; }
-  jobs.unshift({id:uid(), name, contract:c, type:newType, owner:me, members:[me], createdAt:Date.now(),
+  const mem = admin && admin !== me ? [admin, me] : [me];
+  jobs.unshift({id:uid(), name, contract:c, type:newType, owner:admin||me, members:mem,
+    createdBy:me, createdAt:Date.now(),
     incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[]});
   newJob=false; save(); render();
 }
@@ -1367,20 +1380,32 @@ function importData(){
   }catch(e){ alert('Өгөгдөл буруу байна.'); }
 }
 function load2(d){
-  jobs = d.map(j=>({owner: me, members: [me], createdAt: Date.now(), ...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[], workers:j.workers||[], wagePays:j.wagePays||[], bonuses:j.bonuses||[],
+  jobs = d.map(j=>({owner: admin||me, members: [admin||me], createdAt: Date.now(), ...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[], workers:j.workers||[], wagePays:j.wagePays||[], bonuses:j.bonuses||[],
     expenses:(j.expenses||[]).map(e=>({...e, asset: !!e.asset})),
-    members: (j.members && j.members.length) ? j.members : [me],
-    owner: j.owner || me}));
+    members: (j.members && j.members.length) ? j.members : ((admin && admin!==me) ? [admin, me] : [me]),
+    owner: j.owner || admin || me}));
 }
 
 function boot(){
   const F = window.FB;
   F.onAuthStateChanged(F.auth, u => {
     me = u ? (u.email||'').toLowerCase() : null;
-    jobs = []; roster = []; shadow = {}; rshadow = {};
+    jobs = []; roster = []; shadow = {}; rshadow = {}; admin = null;
     booted = !me; ui = {}; openId = null; view = 'list';
-    if(me){ try{ localStorage.setItem('last-email', me); }catch(e){} subscribe(); }
+    if(!me){ render(); return; }
+    try{ localStorage.setItem('last-email', me); }catch(e){}
     render();
+    const ref = F.doc(F.db, 'config', 'admin');
+    F.getDoc(ref).then(d => {
+      if(d.exists() && d.data().email){
+        admin = (d.data().email||'').toLowerCase();
+        subscribe();
+      } else {
+        F.setDoc(ref, {email: me})
+          .then(() => { admin = me; subscribe(); })
+          .catch(() => { admin = me; subscribe(); });
+      }
+    }).catch(e => { syncErr = e.code || 'холболтын алдаа'; booted = true; render(); });
   });
 }
 try{ ui.lastEmail = localStorage.getItem('last-email')||''; }catch(e){}
