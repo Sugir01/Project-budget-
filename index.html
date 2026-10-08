@@ -142,7 +142,7 @@ input[type=range]{width:100%;accent-color:var(--blue);padding:0;border:none;back
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-         createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+         createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
          collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where,
          arrayUnion, arrayRemove, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -168,7 +168,7 @@ try {
 }
 
 window.FB = { auth, db, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut, collection, doc, getDoc, setDoc, updateDoc,
+  createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, collection, doc, getDoc, setDoc, updateDoc,
   deleteDoc, onSnapshot, query, where, arrayUnion, arrayRemove, deleteField };
 window.dispatchEvent(new Event('fb-ready'));
 </script>
@@ -209,6 +209,16 @@ const norm = j => ({
   expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
 });
 
+function clean(v){
+  if(Array.isArray(v)) return v.map(clean);
+  if(v && typeof v === 'object'){
+    const o = {};
+    Object.keys(v).forEach(k => { if(v[k] !== undefined) o[k] = clean(v[k]); });
+    return o;
+  }
+  return v;
+}
+
 const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses'];
 const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt'];
 
@@ -229,7 +239,8 @@ function cloudRender(){
 function jobDiff(prev, j){
   const u = {}, extra = [];
   FIELDS.forEach(k => {
-    if(JSON.stringify(prev[k]) !== JSON.stringify(j[k])) u[k] = j[k] === undefined ? FB.deleteField() : j[k];
+    if(JSON.stringify(prev[k]) !== JSON.stringify(j[k]))
+      u[k] = j[k] === undefined ? FB.deleteField() : clean(j[k]);
   });
   LISTS.forEach(k => {
     const a = prev[k]||[], b = j[k]||[];
@@ -238,9 +249,9 @@ function jobDiff(prev, j){
     const added = b.filter(x => !ai.has(x.id));
     const removed = a.filter(x => !bi.has(x.id));
     const edited = b.some(x => ai.has(x.id) && ai.get(x.id) !== JSON.stringify(x));
-    if(edited || (added.length && removed.length)) u[k] = b;
-    else if(added.length) u[k] = FB.arrayUnion.apply(null, added);
-    else if(removed.length) u[k] = FB.arrayRemove.apply(null, removed);
+    if(edited || (added.length && removed.length)) u[k] = clean(b);
+    else if(added.length) u[k] = FB.arrayUnion.apply(null, clean(added));
+    else if(removed.length) u[k] = FB.arrayRemove.apply(null, clean(removed));
   });
   return u;
 }
@@ -253,13 +264,19 @@ function save(){
     const prev = shadow[j.id] ? JSON.parse(shadow[j.id]) : null;
     shadow[j.id] = cur;
     const ref = FB.doc(FB.db, 'jobs', j.id);
-    const p = prev ? FB.updateDoc(ref, jobDiff(prev, j)) : FB.setDoc(ref, j);
-    p.catch(e => { syncErr = e.code || 'алдаа'; render(); });
+    try {
+      const p = prev ? FB.updateDoc(ref, jobDiff(prev, j)) : FB.setDoc(ref, clean(j));
+      p.catch(e => { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); });
+    } catch(e) {
+      syncErr = e.code || e.message || 'алдаа';
+      setTimeout(render, 0);
+    }
   });
   Object.keys(shadow).forEach(id => {
     if(!jobs.some(j => j.id === id)){
       delete shadow[id];
-      FB.deleteDoc(FB.doc(FB.db, 'jobs', id)).catch(e => { syncErr = e.code||'алдаа'; });
+      try { FB.deleteDoc(FB.doc(FB.db, 'jobs', id)).catch(e => { syncErr = e.code||'алдаа'; }); }
+      catch(e) { syncErr = e.code || e.message || 'алдаа'; }
     }
   });
 }
@@ -270,13 +287,15 @@ function saveRoster(){
     const cur = JSON.stringify(r);
     if(rshadow[r.id] === cur) return;
     rshadow[r.id] = cur;
-    FB.setDoc(FB.doc(FB.db, 'roster', r.id), {...r, owner: admin || me})
-      .catch(e => { syncErr = e.code||'алдаа'; });
+    try {
+      FB.setDoc(FB.doc(FB.db, 'roster', r.id), clean({...r, role: r.role||'', owner: admin || me}))
+        .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
+    } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
   });
   Object.keys(rshadow).forEach(id => {
     if(!roster.some(r => r.id === id)){
       delete rshadow[id];
-      FB.deleteDoc(FB.doc(FB.db, 'roster', id)).catch(()=>{});
+      try { FB.deleteDoc(FB.doc(FB.db, 'roster', id)).catch(()=>{}); } catch(e) {}
     }
   });
 }
@@ -309,16 +328,40 @@ function doLogin(signup){
   const em = document.getElementById('authEmail').value.trim().toLowerCase();
   const pw = document.getElementById('authPass').value;
   if(!em || pw.length < 6){ ui.authErr = 'Имэйл болон 6-аас дээш тэмдэгт бүхий нууц үг оруулна уу.'; render(); return; }
-  ui.authErr = ''; ui.authBusy = 1; render();
+  ui.authErr = ''; ui.authOk = ''; ui.authBusy = 1; render();
   const fn = signup ? F.createUserWithEmailAndPassword : F.signInWithEmailAndPassword;
   fn(F.auth, em, pw).catch(e => {
     const m = {
       'auth/invalid-credential':'Имэйл эсвэл нууц үг буруу байна.',
       'auth/wrong-password':'Нууц үг буруу байна.',
-      'auth/user-not-found':'Ийм хэрэглэгч алга. "Бүртгүүлэх" дарна уу.',
+      'auth/user-not-found':'Ийм хэрэглэгч алга. "Шинээр бүртгүүлэх" дарна уу.',
       'auth/email-already-in-use':'Энэ имэйл бүртгэлтэй байна. "Нэвтрэх" дарна уу.',
       'auth/weak-password':'Нууц үг хэт богино байна.',
       'auth/invalid-email':'Имэйл буруу байна.',
+      'auth/network-request-failed':'Интернэт холболтоо шалгана уу.'
+    };
+    ui.authErr = m[e.code] || e.code;
+    ui.authBusy = 0; render();
+  });
+}
+
+function resetPass(){
+  const F = window.FB;
+  const em = (document.getElementById('authEmail').value||'').trim().toLowerCase();
+  if(!em || em.indexOf('@') < 0){
+    ui.authErr = 'Эхлээд имэйлээ бичнэ үү, тэгээд энэ товчийг дарна уу.';
+    ui.authOk = ''; render(); return;
+  }
+  ui.authErr = ''; ui.authOk = ''; ui.lastEmail = em; ui.authBusy = 1; render();
+  F.sendPasswordResetEmail(F.auth, em).then(() => {
+    ui.authBusy = 0;
+    ui.authOk = em + ' хаяг руу сэргээх линк илгээлээ. Шуудангаа (мөн спам хавтсаа) шалгана уу.';
+    render();
+  }).catch(e => {
+    const m = {
+      'auth/user-not-found':'Ийм имэйлээр бүртгэл алга. Зөв бичсэн эсэхээ шалгана уу.',
+      'auth/invalid-email':'Имэйл буруу байна.',
+      'auth/too-many-requests':'Хэт олон удаа оролдлоо. Хэсэг хүлээгээд дахин оролдоно уу.',
       'auth/network-request-failed':'Интернэт холболтоо шалгана уу.'
     };
     ui.authErr = m[e.code] || e.code;
@@ -341,6 +384,9 @@ function authView(){
     + '<button class="btn" style="margin-bottom:8px" onclick="doLogin(false)">'
     + (ui.authBusy ? 'Түр хүлээнэ үү…' : 'Нэвтрэх')+'</button>'
     + '<button class="btn ghost" style="width:100%" onclick="doLogin(true)">Шинээр бүртгүүлэх</button>'
+    + (ui.authOk ? '<div class="okmsg" style="margin-top:12px">'+esc(ui.authOk)+'</div>' : '')
+    + '<div style="text-align:center;margin-top:14px">'
+    + '<button class="small" style="border:none" onclick="resetPass()">Нууц үгээ мартсан уу?</button></div>'
     + '</div>'
     + '<div class="note" style="margin-top:14px;text-align:center">Анх удаа бол "Шинээр бүртгүүлэх" дарна уу.</div></div>';
 }
@@ -641,7 +687,9 @@ function chartSvg(j){
 
 function detailView(j){
   const s = spent(j), e = earned(j), av = assetVal(j);
-  let h = '<button class="link" onclick="openId=null;editContract=false;render()">← '
+  let h = (syncErr ? '<div class="warn" style="margin:0 0 12px">Сервертэй холбогдоход алдаа: '
+      + esc(syncErr)+'</div>' : '')
+    + '<button class="link" onclick="openId=null;editContract=false;render()">← '
     + (view==='done' ? 'Дууссан ажил' : 'Бүх ажил') + '</button>'
     + '<div class="card" style="border-radius:14px;padding:18px;margin-bottom:18px">'
     + '<div style="font-size:20px;font-weight:600">'+esc(j.name)
@@ -995,7 +1043,7 @@ function addRoster(){
   const name = document.getElementById('raName').value.trim();
   const r = num(document.getElementById('raRate').value) || 0;
   if(!name){ alert('Нэрээ оруулна уу.'); return; }
-  roster.push({id: uid(), name, rate: r, role: document.getElementById('raRole').value.trim(), owner: admin||me});
+  roster.push({id: uid(), name, rate: r, role: (document.getElementById('raRole').value||'').trim(), owner: admin||me});
   saveRoster(); ui={}; render();
 }
 
@@ -1018,7 +1066,7 @@ function rosterAdd(name, rate, role){
   if(!isAdmin()) return null;
   const hit = roster.find(r => r.name.toLowerCase() === name.toLowerCase());
   if(hit) return hit.id;
-  const r = {id: uid(), name, rate, role, owner: admin||me};
+  const r = {id: uid(), name, rate, role: role||'', owner: admin||me};
   roster.push(r); saveRoster();
   return r.id;
 }
@@ -1027,9 +1075,12 @@ function importWorker(rid){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const r = roster.find(x=>x.id===rid); if(!r) return;
   j.workers = j.workers || [];
-  if(j.workers.some(w => w.rid === r.id || w.name === r.name)) return;
-  j.workers.push({id: uid(), rid: r.id, name: r.name, rate: r.rate, role: r.role});
-  save(); render();
+  if(j.workers.some(w => w.rid === r.id || w.name === r.name)){
+    alert(r.name + ' энэ ажилд аль хэдийн нэмэгдсэн байна.');
+    pickOpen = false; render(); return;
+  }
+  j.workers.push({id: uid(), rid: r.id, name: r.name, rate: r.rate||0, role: r.role||''});
+  pickOpen = false; tab = 'labor'; save(); render();
 }
 
 function typesView(){
@@ -1251,7 +1302,7 @@ function addEntry(){
     amount: a,
     date: document.getElementById('eDate').value || today(),
     asset: tab==='exp' && chk && chk.checked,
-    cat: tab==='exp' ? selCat : undefined
+    cat: tab==='exp' ? selCat : ''
   };
   (tab==='exp'? j.expenses : j.incomes).push(entry);
   save(); render();
@@ -1294,7 +1345,7 @@ function addWorker(){
   j.workers = j.workers || [];
   const role = document.getElementById('waRole').value.trim();
   const rid = rosterAdd(name, r, role);
-  j.workers.push({id: uid(), rid, name, rate: r, role});
+  j.workers.push(clean({id: uid(), rid: rid||undefined, name, rate: r, role}));
   save(); ui={}; render();
 }
 
