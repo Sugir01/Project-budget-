@@ -113,6 +113,29 @@ input:focus{border-color:var(--ink)}
 .confirm .no{background:#fff;color:var(--muted);border:1px solid var(--line)}
 textarea{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--line);
   background:var(--surface);color:var(--ink);font-size:15px;font-family:inherit;min-height:90px}
+.sect{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+.sect>.hd{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;
+  padding:13px 15px;background:none;border:none;cursor:pointer;color:inherit;font-size:15px;font-weight:600;text-align:left}
+.sect>.hd .cnt{font-size:12.5px;color:var(--muted);font-weight:400}
+.arw{color:var(--muted);font-size:14px;display:inline-block;transition:transform .15s}
+.arw.op{transform:rotate(90deg)}
+.sect>.bd{padding:0 15px 14px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:10px 0 6px}
+.cal .wd{text-align:center;font-size:11px;color:var(--muted);padding:3px 0}
+.cal .dy{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  border-radius:8px;font-size:13.5px;background:#E8ECE7;color:var(--ink);cursor:pointer;border:none;font-family:inherit;padding:0}
+.cal .dy.off{background:transparent;cursor:default}
+.cal .dy.on{background:var(--blue);color:#fff;font-weight:600}
+.cal .dy.tdy{box-shadow:inset 0 0 0 2px var(--ink)}
+.cal .dy i{font-size:8.5px;font-style:normal;opacity:.9;line-height:1}
+.calhd{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.calhd button{background:none;border:1px solid var(--line);border-radius:7px;color:var(--ink);
+  font-size:16px;padding:3px 13px;cursor:pointer;font-family:inherit}
+.task{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:11px 0;
+  border-bottom:1px solid #EFF2EE}
+.task:last-child{border-bottom:none}
+.tbar{height:5px;background:var(--track);border-radius:3px;margin-top:6px;overflow:hidden}
+.tbar i{display:block;height:100%}
 .wsel{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--line);
   background:var(--surface);color:var(--ink);font-size:16px;font-family:inherit}
 .catsel{border:none;border-radius:5px;font-size:11.5px;padding:2px 4px;margin-top:4px;
@@ -180,6 +203,7 @@ let jobs = [];
 let roster = [];
 let pickOpen = false;
 let ui = {};
+let openW = false, openM = false;
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
 const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
@@ -205,6 +229,7 @@ const norm = j => ({
   workers: j.workers||[],
   wagePays: j.wagePays||[],
   bonuses: j.bonuses||[],
+  plan: j.plan||[],
   members: j.members||[],
   expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
 });
@@ -219,7 +244,7 @@ function clean(v){
   return v;
 }
 
-const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses'];
+const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses','plan'];
 const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt'];
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
@@ -429,6 +454,16 @@ let selCat = 'mat';
 const spentPct = j => j.contract>0 ? spent(j)/j.contract*100 : 0;
 const lagOf = j => (j.progress||0) > 0 || spent(j) > 0 ? spentPct(j) - (j.progress||0) : 0;
 const workDays = j => new Set((j.labor||[]).map(e=>e.date)).size;
+const planDays = j => (j.plan||[]).reduce((s,t)=>s+(t.days||0),0);
+const taskUsed = (j,tid) => (j.labor||[]).filter(e=>e.taskId===tid).reduce((s,e)=>s+(e.people||1),0);
+const taskOf = (j,tid) => (j.plan||[]).find(t=>t.id===tid);
+const MONN = ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар',
+  '7-р сар','8-р сар','9-р сар','10-р сар','11-р сар','12-р сар'];
+function shiftYM(ym, n){
+  let y = +ym.slice(0,4), m = +ym.slice(5,7) - 1 + n;
+  y += Math.floor(m/12); m = ((m%12)+12)%12;
+  return y + '-' + String(m+1).padStart(2,'0');
+}
 const wkDays = (j,wid) => (j.labor||[]).filter(e=>e.workerId===wid).reduce((s,e)=>s+e.people,0);
 const wkPaidDays = (j,wid) => (j.wagePays||[]).filter(p=>p.workerId===wid).reduce((s,p)=>s+p.days,0);
 const wkDue = (j,w) => (wkDays(j,w.id) - wkPaidDays(j,w.id)) * w.rate;
@@ -726,27 +761,87 @@ function detailView(j){
     + '<div class="tabs">'
     + '<button class="'+(tab==='exp'?'on':'')+'" onclick="tab=\'exp\';render()">Зардал</button>'
     + '<button class="'+(tab==='inc'?'on':'')+'" onclick="tab=\'inc\';render()">Орлого</button>'
-    + '<button class="'+(tab==='labor'?'on':'')+'" onclick="tab=\'labor\';render()">Хүн өдөр</button>'
+    + '<button class="'+(tab==='plan'?'on':'')+'" onclick="tab=\'plan\';ui={};render()">Төлөвлөгөө</button>'
+    + '<button class="'+(tab==='labor'?'on':'')+'" onclick="tab=\'labor\';ui={};render()">Хүн өдөр</button>'
     + '<button class="'+(tab==='asset'?'on':'')+'" onclick="tab=\'asset\';render()">Хөрөнгө</button>'
     + '</div>';
+
+  if(tab === 'plan'){
+    const P = j.plan||[];
+    const used = P.reduce((t,x)=>t+taskUsed(j,x.id),0);
+    h += '<div class="note" style="padding:0 2px 10px">Гүйцэтгэх ажлуудаа хоногоор төлөвлөнө. '
+      + 'Ирц бүртгэхэд эдгээрээс сонгоно.</div></div>';
+
+    h += '<div class="pairs" style="margin:0 0 12px">'
+      + '<div class="pair"><div class="plabel">Төлөвлөсөн хоног</div>'
+      + '<div class="pval" style="color:var(--blue)">'+nd(planDays(j))+'</div></div>'
+      + '<div class="pair"><div class="plabel">Зарцуулсан хүн өдөр</div>'
+      + '<div class="pval" style="color:'+(used>planDays(j)?'var(--bad)':'var(--good)')+'">'+nd(used)+'</div></div></div>';
+
+    h += '<div class="card">';
+    if(P.length === 0){
+      h += '<div class="note" style="padding:0">Төлөвлөгөө оруулаагүй байна.</div>';
+    } else {
+      P.forEach(t => {
+        if(ui.tEdit === t.id){
+          h += '<div class="inf" style="margin:8px 0">'
+            + '<input id="teName" placeholder="Ажлын нэр" value="'+esc(t.name)+'">'
+            + '<input id="teDays" inputmode="decimal" placeholder="Төлөвлөсөн хоног" value="'+(t.days||'')+'">'
+            + '<div class="btns"><button class="btn" onclick="saveTask(\''+t.id+'\')">Хадгалах</button>'
+            + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+          return;
+        }
+        const u = taskUsed(j, t.id), pct = t.days ? Math.min(u/t.days*100, 100) : 0;
+        h += '<div class="task"><div style="min-width:0;flex:1">'
+          + '<div style="font-size:15px;font-weight:500">'+esc(t.name)
+          + (t.done ? '<span class="tag" style="background:#E4EAE6;color:var(--good)">дууссан</span>' : '')+'</div>'
+          + '<div class="rdate">Төлөвлөсөн '+nd(t.days||0)+' хоног · зарцуулсан '+nd(u)+' хүн өдөр</div>'
+          + '<div class="tbar"><i style="width:'+pct+'%;background:'+(u>(t.days||0)?'var(--bad)':'var(--blue)')+'"></i></div></div>'
+          + '<div style="display:flex;gap:6px;flex:none">'
+          + '<button class="small" onclick="toggleTask(\''+t.id+'\')">'+(t.done?'Нээх':'Дуусгах')+'</button>'
+          + '<button class="small" onclick="ui={tEdit:\''+t.id+'\'};render()">Засах</button>'
+          + '<button class="x" onclick="delTask(\''+t.id+'\')">×</button></div></div>';
+      });
+    }
+    h += '</div>';
+
+    if(ui.tAdd){
+      h += '<div class="inf" style="margin-top:10px">'
+        + '<input id="tnName" placeholder="Гүйцэтгэх ажлын нэр">'
+        + '<input id="tnDays" inputmode="decimal" placeholder="Төлөвлөсөн хоног">'
+        + '<div class="btns"><button class="btn" onclick="addTask()">Нэмэх</button>'
+        + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+    } else {
+      h += '<button class="btn" style="margin-top:10px" onclick="ui={tAdd:1};render()">+ Ажил нэмэх</button>';
+    }
+
+    h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
+        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
+    return h;
+  }
 
   if(tab === 'labor'){
     const L = (j.labor||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
     const dayCount = new Set(L.map(x=>x.date)).size;
     const W = j.workers||[];
+    const P = (j.plan||[]).filter(t=>!t.done);
     const acc = wageAccrued(j), paid = wagePaid(j);
 
     // ирц бүртгэх
     if(W.length === 0){
-      h += '<div class="note" style="padding:0 2px 10px">Эхлээд ажилтнаа нэмнэ үү. Дараа нь ирцийг нь өдрөөр бүртгэнэ.</div></div>';
+      h += '<div class="note" style="padding:0 2px 10px">Эхлээд ажилтнаа нэмнэ үү.</div></div>';
+    } else if((j.plan||[]).length === 0){
+      h += '<div class="note" style="padding:0 2px 10px">Эхлээд "Төлөвлөгөө" хэсэгт гүйцэтгэх ажлаа оруулна уу. '
+        + 'Ирцийг тэр ажлуудад хуваарилна.</div></div>';
     } else {
       h += '<select id="lWorker" class="wsel">'
-        + W.map(w=>'<option value="'+w.id+'">'+esc(w.name)+' · '+fmt(w.rate)+'/өдөр</option>').join('')
+        + W.map(w=>'<option value="'+w.id+'">'+esc(w.name)+(w.role?' · '+esc(w.role):'')+'</option>').join('')
         + '</select>'
-        + '<div style="display:flex;gap:8px;margin:8px 0 10px">'
-        + '<input id="lDays" placeholder="Өдөр" inputmode="decimal" value="1">'
-        + '<input id="eDate" type="date" value="'+today()+'"></div>'
-        + '<button class="btn" onclick="addAttend()">Ирц бүртгэх</button></div>';
+        + '<select id="lTask" class="wsel" style="margin-top:8px">'
+        + (P.length ? P : j.plan).map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('')
+        + '</select>'
+        + '<input id="eDate" type="date" value="'+today()+'" style="margin:8px 0 10px">'
+        + '<button class="btn" onclick="addAttend()">Энэ өдөр ажилласан</button></div>';
     }
 
     // нэгдсэн тоо
@@ -776,7 +871,7 @@ function detailView(j){
       .sort((a,b)=>b.d-a.d);
     if(roleRows.some(r=>r.d>0)){
       const mx = Math.max.apply(null, roleRows.map(r=>r.d));
-      h += '<div class="card" style="margin-bottom:16px"><div style="font-weight:600;margin-bottom:10px">Албан тушаалаар</div>';
+      h += '<div class="card" style="margin-bottom:10px"><div style="font-weight:600;margin-bottom:10px">Албан тушаалаар</div>';
       roleRows.forEach(r => {
         h += '<div style="margin-bottom:11px">'
           + '<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-bottom:5px">'
@@ -789,97 +884,89 @@ function detailView(j){
       h += '</div>';
     }
 
-    // ажилчид
-    h += '<div class="secttl" style="margin:0 0 8px">Ажилчид</div>';
-    if(W.length === 0 && !ui.wAdd){
-      h += '<div class="note">Ажилтан нэмээгүй байна.</div>';
-    }
-    W.forEach(w => {
-      if(ui.wEdit === w.id){
-        h += wForm('we', w.name, w.rate, 'Хадгалах', "saveWorkerEdit('"+w.id+"')", w.role);
-        return;
-      }
-      const d = wkDays(j,w.id), pd = wkPaidDays(j,w.id), due = wkDue(j,w), bn = wkBonus(j,w.id);
-      h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
-        + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
-        + '<span style="font-weight:600;font-size:15.5px">'+esc(w.name)
-        + (w.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(w.role)+'</span>' : '')+'</span>'
-        + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(w.rate)+' / өдөр</span></div>'
-        + '<div class="sub" style="margin:7px 0 10px">Ажилласан '+nd(d)+' өдөр · Олгосон '+nd(pd)
-        + ' өдөр · Үлдэгдэл <b style="color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</b>'
-        + (bn>0 ? '<br>Урамшуулал: <b style="color:var(--good)">'+fmt(bn)+'</b>' : '')+'</div>'
-        + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-        + '<button class="small" onclick="ui={pay:\''+w.id+'\'};render()">Цалин олгох</button>'
-        + '<button class="small" onclick="ui={bon:\''+w.id+'\'};render()">Урамшуулал</button>'
-        + '<button class="small" onclick="ui={wEdit:\''+w.id+'\'};render()">Засах</button>'
-        + '<button class="small warn" onclick="ui={wDel:\''+w.id+'\'};render()">Устгах</button></div>';
+    // ажилчид — хураангуй
+    h += '<div class="sect"><button class="hd" onclick="openW=!openW;render()">'
+      + '<span>Ажилчид <span class="cnt">· '+W.length+' хүн</span></span>'
+      + '<span class="arw'+(openW?' op':'')+'">›</span></button>';
+    if(openW){
+      h += '<div class="bd">';
+      if(W.length === 0 && !ui.wAdd) h += '<div class="note" style="padding:0 0 10px">Ажилтан нэмээгүй байна.</div>';
+      W.forEach(w => {
+        if(ui.wEdit === w.id){
+          h += wForm('we', w.name, w.rate, 'Хадгалах', "saveWorkerEdit('"+w.id+"')", w.role);
+          return;
+        }
+        const d = wkDays(j,w.id), pd = wkPaidDays(j,w.id), due = wkDue(j,w), bn = wkBonus(j,w.id);
+        h += '<div style="padding:12px 0;border-bottom:1px solid #EFF2EE">'
+          + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+          + '<span style="font-weight:600;font-size:15.5px">'+esc(w.name)
+          + (w.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(w.role)+'</span>' : '')+'</span>'
+          + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(w.rate)+' / өдөр</span></div>'
+          + '<div class="sub" style="margin:7px 0 10px">Ажилласан '+nd(d)+' өдөр · Олгосон '+nd(pd)
+          + ' өдөр · Үлдэгдэл <b style="color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</b>'
+          + (bn>0 ? '<br>Урамшуулал: <b style="color:var(--good)">'+fmt(bn)+'</b>' : '')+'</div>'
+          + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
+          + '<button class="small" onclick="openCal(\''+w.id+'\')">Ирц</button>'
+          + '<button class="small" onclick="ui={pay:\''+w.id+'\'};render()">Цалин олгох</button>'
+          + '<button class="small" onclick="ui={bon:\''+w.id+'\'};render()">Урамшуулал</button>'
+          + '<button class="small" onclick="ui={wEdit:\''+w.id+'\'};render()">Засах</button>'
+          + '<button class="small warn" onclick="ui={wDel:\''+w.id+'\'};render()">Устгах</button></div>';
 
-      if(ui.pay === w.id){
-        const left = d - pd;
-        h += '<div class="inf" style="margin:10px 0 0">'
-          + '<div class="rdate" style="margin-bottom:6px">Үлдэгдэл '+nd(left>0?left:0)+' өдөр · '+fmt(w.rate)+'/өдөр</div>'
-          + '<input id="payDays" inputmode="decimal" placeholder="Хэдэн өдрийн цалин" value="'+nd(left>0?left:0)+'">'
-          + '<input id="payDate" type="date" value="'+today()+'">'
-          + '<div class="btns"><button class="btn" onclick="payWage(\''+w.id+'\')">Олгох</button>'
-          + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
-      }
-      if(ui.bon === w.id){
-        h += '<div class="inf" style="margin:10px 0 0">'
-          + '<input id="bonAmt" inputmode="numeric" oninput="liveNum(this)" placeholder="Урамшууллын дүн (₮)">'
-          + '<input id="bonNote" placeholder="Шалтгаан (сайн ажилласан, илүү цаг…)">'
-          + '<input id="bonDate" type="date" value="'+today()+'">'
-          + '<div class="btns"><button class="btn" onclick="payBonus(\''+w.id+'\')">Олгох</button>'
-          + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
-      }
-      if(ui.wDel === w.id){
-        h += confirmBox(esc(w.name)+' — ирцийн бичилттэй нь устгах уу? Олгосон цалин зардалд үлдэнэ.',
-                        "delWorker('"+w.id+"')");
-      }
-      h += '</div>';
-    });
-
-    if(ui.wAdd){
-      h += wForm('wa', '', 0, 'Нэмэх', 'addWorker()');
-    } else {
-      const avail = roster.filter(r => !W.some(w => w.rid === r.id || w.name === r.name));
-      h += '<div style="display:flex;gap:8px;margin:6px 0 16px">'
-        + '<button class="btn ghost" style="flex:1" onclick="ui={wAdd:1};render()">+ Шинэ ажилтан</button>'
-        + '<button class="btn ghost" style="flex:1" onclick="pickOpen=!pickOpen;render()">'
-        + (pickOpen ? 'Хаах' : 'Жагсаалтаас дуудах')+'</button></div>';
-      if(pickOpen){
-        h += '<div class="card" style="margin:-10px 0 16px">';
-        if(roster.length === 0){
-          h += '<div class="note" style="padding:0">Ажилчдын жагсаалт хоосон байна. Нүүр хуудасны "Ажилчид" цэснээс нэмнэ үү.</div>';
-        } else if(avail.length === 0){
-          h += '<div class="note" style="padding:0">Жагсаалтын бүх ажилтан энэ ажилд нэмэгдсэн байна.</div>';
-        } else {
-          avail.forEach(r => {
-            h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
-              + 'padding:10px 0;border-bottom:1px solid #EFF2EE">'
-              + '<div style="min-width:0"><div style="font-size:15px;font-weight:500">'+esc(r.name)+'</div>'
-              + '<div class="rdate">'+fmt(r.rate)+' / өдөр</div></div>'
-              + '<button class="small" onclick="importWorker(\''+r.id+'\')">Нэмэх</button></div>';
-          });
+        if(ui.cal && ui.cal.wid === w.id) h += calendarBox(j, w);
+        if(ui.pay === w.id){
+          const left = d - pd;
+          h += '<div class="inf" style="margin:10px 0 0">'
+            + '<div class="rdate" style="margin-bottom:6px">Үлдэгдэл '+nd(left>0?left:0)+' өдөр · '+fmt(w.rate)+'/өдөр</div>'
+            + '<input id="payDays" inputmode="decimal" placeholder="Хэдэн өдрийн цалин" value="'+nd(left>0?left:0)+'">'
+            + '<input id="payDate" type="date" value="'+today()+'">'
+            + '<div class="btns"><button class="btn" onclick="payWage(\''+w.id+'\')">Олгох</button>'
+            + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+        }
+        if(ui.bon === w.id){
+          h += '<div class="inf" style="margin:10px 0 0">'
+            + '<input id="bonAmt" inputmode="numeric" oninput="liveNum(this)" placeholder="Урамшууллын дүн (₮)">'
+            + '<input id="bonNote" placeholder="Шалтгаан (сайн ажилласан, илүү цаг…)">'
+            + '<input id="bonDate" type="date" value="'+today()+'">'
+            + '<div class="btns"><button class="btn" onclick="payBonus(\''+w.id+'\')">Олгох</button>'
+            + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+        }
+        if(ui.wDel === w.id){
+          h += confirmBox(esc(w.name)+' — ирцийн бичилттэй нь устгах уу? Олгосон цалин зардалд үлдэнэ.',
+                          "delWorker('"+w.id+"')");
         }
         h += '</div>';
-      }
-    }
-
-    // ирцийн түүх
-    h += '<div class="secttl" style="margin:0 0 8px">Ирцийн түүх</div>';
-    if(L.length===0){
-      h += '<div class="note">Одоогоор ирц бүртгээгүй байна.</div>';
-    } else {
-      L.forEach(it=>{
-        const w = W.find(x=>x.id===it.workerId);
-        h += '<div class="row" style="border-left:3px solid var(--blue)"><div style="min-width:0">'
-          + '<div class="rdesc">'+esc(w ? w.name : (it.desc||'Ажилласан'))+'</div>'
-          + '<div class="rdate">'+it.date+(w?'':' · хуучин бичилт')+'</div></div>'
-          + '<div style="display:flex;align-items:center;gap:8px">'
-          + '<span class="ramt">'+nd(it.people)+(w?' өдөр':' хүн')+'</span>'
-          + '<button class="x" onclick="delLabor(\''+it.id+'\')">×</button></div></div>';
       });
+
+      if(ui.wAdd){
+        h += wForm('wa', '', 0, 'Нэмэх', 'addWorker()');
+      } else {
+        const avail = roster.filter(r => !W.some(w => w.rid === r.id || w.name === r.name));
+        h += '<div style="display:flex;gap:8px;margin:12px 0 0">'
+          + '<button class="btn ghost" style="flex:1" onclick="ui={wAdd:1};render()">+ Шинэ ажилтан</button>'
+          + '<button class="btn ghost" style="flex:1" onclick="pickOpen=!pickOpen;render()">'
+          + (pickOpen ? 'Хаах' : 'Жагсаалтаас дуудах')+'</button></div>';
+        if(pickOpen){
+          h += '<div style="margin-top:10px">';
+          if(roster.length === 0){
+            h += '<div class="note" style="padding:0">Ажилчдын жагсаалт хоосон байна. Нүүр хуудасны "Ажилчид" цэснээс нэмнэ үү.</div>';
+          } else if(avail.length === 0){
+            h += '<div class="note" style="padding:0">Жагсаалтын бүх ажилтан энэ ажилд нэмэгдсэн байна.</div>';
+          } else {
+            avail.forEach(r => {
+              h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
+                + 'padding:10px 0;border-bottom:1px solid #EFF2EE">'
+                + '<div style="min-width:0"><div style="font-size:15px;font-weight:500">'+esc(r.name)+'</div>'
+                + '<div class="rdate">'+(r.role?esc(r.role)+' · ':'')+fmt(r.rate)+' / өдөр</div></div>'
+                + '<button class="small" onclick="importWorker(\''+r.id+'\')">Нэмэх</button></div>';
+            });
+          }
+          h += '</div>';
+        }
+      }
+      h += '</div>';
     }
+    h += '</div>';
+
     h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
         : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
     return h;
@@ -1230,10 +1317,17 @@ function restoreAsset(jid, eid){
 }
 
 function memberBox(j){
-  const owner = !j.owner || j.owner === me;
+  const owner = isAdmin();
+  if(!owner) return '';
   const ms = j.members || [];
   let h = '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
-    + '<div class="mlabel" style="margin-bottom:7px">Хандах эрхтэй хүмүүс</div>';
+    + '<button class="hd" style="padding:4px 0;width:100%;display:flex;justify-content:space-between;'
+    + 'align-items:center;background:none;border:none;cursor:pointer;font-size:13.5px;font-weight:600;color:var(--muted)" '
+    + 'onclick="openM=!openM;render()">'
+    + '<span>Хандах эрхтэй хүмүүс · '+ms.length+'</span>'
+    + '<span class="arw'+(openM?' op':'')+'">›</span></button>';
+  if(!openM) return h + '</div>';
+  h += '<div style="margin-top:8px">';
   ms.forEach(m => {
     h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0">'
       + '<span style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m)
@@ -1253,7 +1347,7 @@ function memberBox(j){
     h += '<div class="rdate" style="margin-top:8px">Нэмсэн хүн энэ ажлыг өөрийн утсан дээрээ харж, '
       + 'зардал, ирц оруулна. Тухайн хүн эхлээд аппд ижил имэйлээр бүртгүүлсэн байх ёстой.</div>';
   }
-  return h + '</div>';
+  return h + '</div></div>';
 }
 
 function addMember(){
@@ -1287,7 +1381,7 @@ function addJob(){
   const mem = admin && admin !== me ? [admin, me] : [me];
   jobs.unshift({id:uid(), name, contract:c, type:newType, owner:admin||me, members:mem,
     createdBy:me, createdAt:Date.now(),
-    incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[]});
+    incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[], plan:[]});
   newJob=false; save(); render();
 }
 
@@ -1326,14 +1420,112 @@ function setProgress(v){
   save(); render();
 }
 
+function calendarBox(j, w){
+  const ym = (ui.cal && ui.cal.ym) || today().slice(0,7);
+  const y = +ym.slice(0,4), m = +ym.slice(5,7);
+  const first = new Date(Date.UTC(y, m-1, 1));
+  const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  let lead = first.getUTCDay() - 1; if(lead < 0) lead = 6;   // Даваагаар эхэлнэ
+
+  const ent = (j.labor||[]).filter(e => e.workerId === w.id && e.date.slice(0,7) === ym);
+  const byDay = {};
+  ent.forEach(e => { (byDay[+e.date.slice(8,10)] = byDay[+e.date.slice(8,10)] || []).push(e); });
+
+  let h = '<div class="inf" style="margin:10px 0 0">'
+    + '<div class="calhd"><button onclick="calMove(-1)">‹</button>'
+    + '<span style="font-weight:600;font-size:14.5px">'+y+' · '+MONN[m-1]+'</span>'
+    + '<button onclick="calMove(1)">›</button></div>'
+    + '<div class="cal">'
+    + ['Да','Мя','Лх','Пү','Ба','Бя','Ня'].map(d=>'<div class="wd">'+d+'</div>').join('');
+  for(let i=0;i<lead;i++) h += '<div class="dy off"></div>';
+  for(let d=1; d<=dim; d++){
+    const ds = ym + '-' + String(d).padStart(2,'0');
+    const on = byDay[d];
+    h += '<button class="dy'+(on?' on':'')+(ds===today()?' tdy':'')+'" '
+      + 'onclick="ui.calDay=\''+ds+'\';render()">'+d
+      + (on && on.length>1 ? '<i>'+on.length+'</i>' : '')+'</button>';
+  }
+  h += '</div><div class="rdate" style="text-align:center">Энэ сард '+ent.length+' өдөр ажилласан</div>';
+
+  if(ui.calDay){
+    const list = (j.labor||[]).filter(e => e.workerId === w.id && e.date === ui.calDay);
+    h += '<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">'
+      + '<div style="font-size:13.5px;font-weight:600;margin-bottom:6px">'+ui.calDay+'</div>';
+    if(list.length === 0){
+      h += '<div class="rdate">Энэ өдөр ирц бүртгэгдээгүй.</div>';
+    } else {
+      list.forEach(e => {
+        const t = taskOf(j, e.taskId);
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0">'
+          + '<span style="font-size:14px">'+esc(t ? t.name : 'Ажилласан')+'</span>'
+          + '<button class="x" onclick="delLabor(\''+e.id+'\')">×</button></div>';
+      });
+    }
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+
+function openCal(wid){
+  ui = (ui.cal && ui.cal.wid === wid) ? {} : {cal:{wid, ym: today().slice(0,7)}};
+  render();
+}
+
+function calMove(n){
+  if(!ui.cal) return;
+  ui.cal.ym = shiftYM(ui.cal.ym, n);
+  ui.calDay = '';
+  render();
+}
+
+function addTask(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const name = document.getElementById('tnName').value.trim();
+  const d = parseFloat(String(document.getElementById('tnDays').value).replace(',','.')) || 0;
+  if(!name){ alert('Ажлын нэрээ оруулна уу.'); return; }
+  j.plan = j.plan || [];
+  j.plan.push({id: uid(), name, days: d});
+  save(); ui={}; render();
+}
+
+function saveTask(tid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const t = (j.plan||[]).find(x=>x.id===tid); if(!t) return;
+  const name = document.getElementById('teName').value.trim();
+  const d = parseFloat(String(document.getElementById('teDays').value).replace(',','.'));
+  if(name) t.name = name;
+  if(d >= 0) t.days = d;
+  save(); ui={}; render();
+}
+
+function toggleTask(tid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const t = (j.plan||[]).find(x=>x.id===tid); if(!t) return;
+  if(t.done) delete t.done; else t.done = true;
+  save(); render();
+}
+
+function delTask(tid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const used = taskUsed(j, tid);
+  if(used > 0){ alert('Энэ ажилд '+nd(used)+' хүн өдөр бүртгэгдсэн тул устгах боломжгүй. Эхлээд ирцийг нь устгана уу.'); return; }
+  j.plan = (j.plan||[]).filter(x=>x.id!==tid);
+  save(); render();
+}
+
 function addAttend(){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const wid = document.getElementById('lWorker').value;
-  const d = parseFloat(String(document.getElementById('lDays').value).replace(',','.'));
-  if(!(d>0)){ alert('Өдрийн тоог оруулна уу.'); return; }
+  const tid = document.getElementById('lTask').value;
+  const dt = document.getElementById('eDate').value || today();
+  if(!wid || !tid){ alert('Ажилтан болон гүйцэтгэх ажлаа сонгоно уу.'); return; }
   j.labor = j.labor || [];
-  j.labor.push({id: uid(), workerId: wid, people: d,
-    date: document.getElementById('eDate').value || today()});
+  if(j.labor.some(e => e.workerId===wid && e.taskId===tid && e.date===dt)){
+    const w = (j.workers||[]).find(x=>x.id===wid);
+    alert((w?w.name:'Энэ хүн')+' — '+dt+' өдөр энэ ажил дээр аль хэдийн бүртгэгдсэн байна.');
+    return;
+  }
+  j.labor.push({id: uid(), workerId: wid, taskId: tid, people: 1, date: dt});
   save(); render();
 }
 
@@ -1450,7 +1642,7 @@ function importData(){
   }catch(e){ alert('Өгөгдөл буруу байна.'); }
 }
 function load2(d){
-  jobs = d.map(j=>({owner: admin||me, members: [admin||me], createdAt: Date.now(), ...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[], workers:j.workers||[], wagePays:j.wagePays||[], bonuses:j.bonuses||[],
+  jobs = d.map(j=>({owner: admin||me, members: [admin||me], createdAt: Date.now(), ...j, contract:j.contract ?? j.budget ?? 0, incomes:j.incomes||[], labor:j.labor||[], workers:j.workers||[], wagePays:j.wagePays||[], bonuses:j.bonuses||[], plan:j.plan||[],
     expenses:(j.expenses||[]).map(e=>({...e, asset: !!e.asset})),
     members: (j.members && j.members.length) ? j.members : ((admin && admin!==me) ? [admin, me] : [me]),
     owner: j.owner || admin || me}));
