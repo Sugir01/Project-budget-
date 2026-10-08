@@ -131,6 +131,12 @@ textarea{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--l
 .calhd{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .calhd button{background:none;border:1px solid var(--line);border-radius:7px;color:var(--ink);
   font-size:16px;padding:3px 13px;cursor:pointer;font-family:inherit}
+.wrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #EFF2EE;cursor:pointer}
+.wrow:last-child{border-bottom:none}
+.wrow input{width:21px;height:21px;accent-color:var(--blue);flex:none;margin:0}
+.wrow .nm{flex:1;min-width:0;font-size:15px}
+.wrow .rl{font-size:12px;color:var(--muted)}
+.wrow.has{background:#F2F7F4;margin:0 -8px;padding:9px 8px;border-radius:7px;border-bottom:none}
 .task{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:11px 0;
   border-bottom:1px solid #EFF2EE}
 .task:last-child{border-bottom:none}
@@ -871,18 +877,26 @@ function detailView(j){
         + 'Ирцийг тэр ажлуудад хуваарилна.</div></div>';
     } else {
       const TL = P.length ? P : j.plan;
-      if(!W.some(x=>x.id===lastW)) lastW = W[0].id;
       if(!TL.some(x=>x.id===lastT)) lastT = TL[0].id;
       if(!lastD) lastD = today();
-      h += '<select id="lWorker" class="wsel" onchange="lastW=this.value">'
-        + W.map(w=>'<option value="'+w.id+'"'+(w.id===lastW?' selected':'')+'>'
-            + esc(w.name)+(w.role?' · '+esc(w.role):'')+'</option>').join('')
-        + '</select>'
-        + '<select id="lTask" class="wsel" style="margin-top:8px" onchange="lastT=this.value">'
+      const marked = {};
+      (j.labor||[]).forEach(e => { if(e.taskId===lastT && e.date===lastD) marked[e.workerId] = 1; });
+      const nMark = Object.keys(marked).length;
+
+      h += '<select id="lTask" class="wsel" onchange="lastT=this.value;render()">'
         + TL.map(t=>'<option value="'+t.id+'"'+(t.id===lastT?' selected':'')+'>'+esc(t.name)+'</option>').join('')
         + '</select>'
-        + '<input id="eDate" type="date" value="'+lastD+'" onchange="lastD=this.value" style="margin:8px 0 10px">'
-        + '<button class="btn" onclick="addAttend()">Энэ өдөр ажилласан</button></div>';
+        + '<input id="eDate" type="date" value="'+lastD+'" onchange="lastD=this.value;render()" style="margin:8px 0 2px">'
+        + '<div class="rdate" style="margin:6px 0 2px">Энэ өдөр ажилласан хүмүүсээ тэмдэглэнэ үү</div>'
+        + '<div style="margin-bottom:10px">'
+        + W.map(w => '<label class="wrow'+(marked[w.id]?' has':'')+'">'
+            + '<input type="checkbox" class="wchk" value="'+w.id+'"'+(marked[w.id]?' checked':'')+'>'
+            + '<span class="nm">'+esc(w.name)
+            + (w.role ? '<span class="rl"> · '+esc(w.role)+'</span>' : '')+'</span>'
+            + '<span class="rl">'+fmt(w.rate)+'</span></label>').join('')
+        + '</div>'
+        + '<button class="btn" onclick="saveAttend()">'
+        + (nMark ? 'Ирц шинэчлэх' : 'Ирц бүртгэх')+'</button></div>';
     }
 
     // нэгдсэн тоо
@@ -1565,20 +1579,27 @@ function delTask(tid){
   save(); render();
 }
 
-function addAttend(){
+function saveAttend(){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
-  const wid = document.getElementById('lWorker').value;
   const tid = document.getElementById('lTask').value;
   const dt = document.getElementById('eDate').value || today();
-  if(!wid || !tid){ alert('Ажилтан болон гүйцэтгэх ажлаа сонгоно уу.'); return; }
-  lastW = wid; lastT = tid; lastD = dt;
+  if(!tid){ alert('Гүйцэтгэх ажлаа сонгоно уу.'); return; }
+  lastT = tid; lastD = dt;
+
+  const picked = [...document.querySelectorAll('.wchk')].filter(c=>c.checked).map(c=>c.value);
   j.labor = j.labor || [];
-  if(j.labor.some(e => e.workerId===wid && e.taskId===tid && e.date===dt)){
-    const w = (j.workers||[]).find(x=>x.id===wid);
-    alert((w?w.name:'Энэ хүн')+' — '+dt+' өдөр энэ ажил дээр аль хэдийн бүртгэгдсэн байна.');
+  const cur = j.labor.filter(e => e.taskId===tid && e.date===dt);
+  const curIds = cur.map(e=>e.workerId);
+
+  const added = picked.filter(id => curIds.indexOf(id) < 0);
+  const removed = cur.filter(e => picked.indexOf(e.workerId) < 0);
+
+  if(added.length === 0 && removed.length === 0){
+    alert('Өөрчлөлт алга. Ажилласан хүмүүсээ тэмдэглэнэ үү.');
     return;
   }
-  j.labor.push({id: uid(), workerId: wid, taskId: tid, people: 1, date: dt});
+  removed.forEach(e => { j.labor = j.labor.filter(x => x.id !== e.id); });
+  added.forEach(wid => j.labor.push({id: uid(), workerId: wid, taskId: tid, people: 1, date: dt}));
   save(); render();
 }
 
