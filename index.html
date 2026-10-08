@@ -204,6 +204,7 @@ let roster = [];
 let pickOpen = false;
 let ui = {};
 let openW = false, openM = false;
+let lastW = '', lastT = '', lastD = '';
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
 const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
@@ -452,9 +453,13 @@ let newType = 'asm';
 const catOf = k => CATS.find(c=>c.k===k) || CATS[CATS.length-1];
 let selCat = 'mat';
 const spentPct = j => j.contract>0 ? spent(j)/j.contract*100 : 0;
-const lagOf = j => (j.progress||0) > 0 || spent(j) > 0 ? spentPct(j) - (j.progress||0) : 0;
+const lagOf = j => jobProgress(j) > 0 || spent(j) > 0 ? spentPct(j) - jobProgress(j) : 0;
 const workDays = j => new Set((j.labor||[]).map(e=>e.date)).size;
 const planDays = j => (j.plan||[]).reduce((s,t)=>s+(t.days||0),0);
+const taskPct = t => t.done ? 100 : (t.pct||0);
+const earnedDays = j => (j.plan||[]).reduce((s,t)=>s+(t.days||0)*taskPct(t)/100, 0);
+const hasPlan = j => (j.plan||[]).length > 0 && planDays(j) > 0;
+const jobProgress = j => hasPlan(j) ? earnedDays(j)/planDays(j)*100 : (j.progress||0);
 const taskUsed = (j,tid) => (j.labor||[]).filter(e=>e.taskId===tid).reduce((s,e)=>s+(e.people||1),0);
 const taskOf = (j,tid) => (j.plan||[]).find(t=>t.id===tid);
 const MONN = ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар',
@@ -606,7 +611,7 @@ function listView(){
 }
 
 function progBars(j){
-  const pr = j.progress||0, sp = spentPct(j);
+  const pr = jobProgress(j), sp = spentPct(j);
   return '<div class="prog"><div class="pl"><span>Гүйцэтгэл</span><span>'+Math.round(pr)+'%</span></div>'
     + '<div class="pb"><i style="width:'+Math.min(pr,100)+'%;background:var(--blue)"></i></div></div>'
     + '<div class="prog" style="margin-bottom:10px"><div class="pl"><span>Төсвийн зарцуулалт</span><span>'+Math.round(sp)+'%</span></div>'
@@ -614,26 +619,42 @@ function progBars(j){
 }
 
 function progressCard(j){
-  const pr = j.progress||0, s = spent(j), lag = lagOf(j);
+  const pr = jobProgress(j), s = spent(j), lag = lagOf(j);
+  const md = manDays(j);
   let h = '<div class="card" style="margin-bottom:18px">'
     + '<div style="display:flex;justify-content:space-between;align-items:baseline">'
     + '<span style="font-weight:600">Ажлын гүйцэтгэл</span>'
-    + '<b id="prVal" style="font-size:20px;color:var(--blue)">'+pr+'%</b></div>'
-    + '<input type="range" min="0" max="100" step="5" value="'+pr+'" '
-    + 'oninput="document.getElementById(\'prVal\').textContent=this.value+\'%\'" '
-    + 'onchange="setProgress(this.value)">'
-    + progBars(j);
+    + '<b id="prVal" style="font-size:20px;color:var(--blue)">'+Math.round(pr)+'%</b></div>';
+
+  if(hasPlan(j)){
+    h += '<div class="rdate" style="margin-top:4px">'+(j.plan||[]).filter(t=>taskPct(t)>=100).length
+      + ' / '+(j.plan||[]).length+' ажил дууссан · '+nd(Math.round(earnedDays(j)*10)/10)
+      + ' / '+nd(planDays(j))+' хоногийн ажил хийгдсэн</div>'
+      + progBars(j);
+  } else {
+    h += '<input type="range" min="0" max="100" step="5" value="'+(j.progress||0)+'" '
+      + 'oninput="document.getElementById(\'prVal\').textContent=this.value+\'%\'" '
+      + 'onchange="setProgress(this.value)">'
+      + progBars(j);
+  }
+
   if(pr > 0 && s > 0){
     const fcost = s / pr * 100, fprofit = j.contract - fcost;
     h += '<div class="fc">Энэ хурдаар үргэлжилбэл эцсийн зардал ≈ <b>'+fmt(fcost)+'</b>, '
       + 'ашиг ≈ <b class="'+(fprofit<0?'neg':'pos')+'">'+fmt(fprofit)+'</b></div>';
   }
+  if(pr > 0 && md > 0){
+    h += '<div class="fc">Хөдөлмөр: '+nd(md)+' хүн өдөр зарцуулсан, дуустал нийт ≈ <b>'
+      + nd(Math.round(md/pr*100))+' хүн өдөр</b> шаардагдана</div>';
+  }
+
   if(lag >= 10){
     h += '<div class="warn">⚠ Зарцуулалт гүйцэтгэлээс '+Math.round(lag)+'% түрүүлж байна. Зардлаа хянах хэрэгтэй.</div>';
   } else if(pr > 0 && s > 0){
     h += '<div class="okmsg">Зарцуулалт гүйцэтгэлдээ тохирч байна.</div>';
-  } else if(pr === 0){
-    h += '<div class="fc" style="color:var(--muted)">Гүйцэтгэлийн хувийг гулсуулж оруулбал төсвийн зарцуулалттай харьцуулж, эцсийн ашгийг таамаглана.</div>';
+  } else if(!hasPlan(j)){
+    h += '<div class="fc" style="color:var(--muted)">"Төлөвлөгөө" хэсэгт гүйцэтгэх ажлуудаа оруулбал '
+      + 'гүйцэтгэл автоматаар тооцогдож, энэ гулсуур хэрэггүй болно.</div>';
   }
   return h + '</div>';
 }
@@ -772,11 +793,16 @@ function detailView(j){
     h += '<div class="note" style="padding:0 2px 10px">Гүйцэтгэх ажлуудаа хоногоор төлөвлөнө. '
       + 'Ирц бүртгэхэд эдгээрээс сонгоно.</div></div>';
 
-    h += '<div class="pairs" style="margin:0 0 12px">'
-      + '<div class="pair"><div class="plabel">Төлөвлөсөн хоног</div>'
-      + '<div class="pval" style="color:var(--blue)">'+nd(planDays(j))+'</div></div>'
+    const pr = jobProgress(j);
+    h += '<div class="pairs" style="margin:0 0 10px">'
+      + '<div class="pair"><div class="plabel">Нийт гүйцэтгэл</div>'
+      + '<div class="pval" style="color:var(--blue)">'+Math.round(pr)+'%</div></div>'
       + '<div class="pair"><div class="plabel">Зарцуулсан хүн өдөр</div>'
-      + '<div class="pval" style="color:'+(used>planDays(j)?'var(--bad)':'var(--good)')+'">'+nd(used)+'</div></div></div>';
+      + '<div class="pval" style="color:var(--ink)">'+nd(used)+'</div></div></div>'
+      + '<div class="fc" style="color:var(--muted);margin:0 2px 12px">'
+      + nd(Math.round(earnedDays(j)*10)/10)+' / '+nd(planDays(j))+' хоногийн ажил хийгдсэн'
+      + (pr>0 && used>0 ? ' · энэ хурдаар дуустал нийт ≈ '+nd(Math.round(used/pr*100))+' хүн өдөр' : '')
+      + '</div>';
 
     h += '<div class="card">';
     if(P.length === 0){
@@ -791,16 +817,26 @@ function detailView(j){
             + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
           return;
         }
-        const u = taskUsed(j, t.id), pct = t.days ? Math.min(u/t.days*100, 100) : 0;
-        h += '<div class="task"><div style="min-width:0;flex:1">'
+        const u = taskUsed(j, t.id), tp = taskPct(t);
+        const wgt = planDays(j) ? (t.days||0)/planDays(j)*100 : 0;
+        h += '<div style="padding:12px 0;border-bottom:1px solid #EFF2EE">'
+          + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
+          + '<div style="min-width:0;flex:1">'
           + '<div style="font-size:15px;font-weight:500">'+esc(t.name)
           + (t.done ? '<span class="tag" style="background:#E4EAE6;color:var(--good)">дууссан</span>' : '')+'</div>'
-          + '<div class="rdate">Төлөвлөсөн '+nd(t.days||0)+' хоног · зарцуулсан '+nd(u)+' хүн өдөр</div>'
-          + '<div class="tbar"><i style="width:'+pct+'%;background:'+(u>(t.days||0)?'var(--bad)':'var(--blue)')+'"></i></div></div>'
-          + '<div style="display:flex;gap:6px;flex:none">'
+          + '<div class="rdate">'+nd(t.days||0)+' хоног · жин '+Math.round(wgt)+'% · '+nd(u)+' хүн өдөр зарцуулсан</div>'
+          + '</div><div style="display:flex;gap:6px;flex:none">'
           + '<button class="small" onclick="toggleTask(\''+t.id+'\')">'+(t.done?'Нээх':'Дуусгах')+'</button>'
           + '<button class="small" onclick="ui={tEdit:\''+t.id+'\'};render()">Засах</button>'
-          + '<button class="x" onclick="delTask(\''+t.id+'\')">×</button></div></div>';
+          + '<button class="x" onclick="delTask(\''+t.id+'\')">×</button></div></div>'
+          + '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'
+          + '<input type="range" min="0" max="100" step="5" value="'+tp+'"'+(t.done?' disabled':'')
+          + ' oninput="document.getElementById(\'tp'+t.id+'\').textContent=this.value+\'%\'"'
+          + ' onchange="setTaskPct(\''+t.id+'\',this.value)" style="flex:1">'
+          + '<b id="tp'+t.id+'" style="font-size:14px;color:'+(tp>=100?'var(--good)':'var(--blue)')
+          + ';width:42px;text-align:right">'+tp+'%</b></div>'
+          + '<div class="tbar"><i style="width:'+tp+'%;background:'+(tp>=100?'var(--good)':'var(--blue)')+'"></i></div>'
+          + '</div>';
       });
     }
     h += '</div>';
@@ -834,13 +870,18 @@ function detailView(j){
       h += '<div class="note" style="padding:0 2px 10px">Эхлээд "Төлөвлөгөө" хэсэгт гүйцэтгэх ажлаа оруулна уу. '
         + 'Ирцийг тэр ажлуудад хуваарилна.</div></div>';
     } else {
-      h += '<select id="lWorker" class="wsel">'
-        + W.map(w=>'<option value="'+w.id+'">'+esc(w.name)+(w.role?' · '+esc(w.role):'')+'</option>').join('')
+      const TL = P.length ? P : j.plan;
+      if(!W.some(x=>x.id===lastW)) lastW = W[0].id;
+      if(!TL.some(x=>x.id===lastT)) lastT = TL[0].id;
+      if(!lastD) lastD = today();
+      h += '<select id="lWorker" class="wsel" onchange="lastW=this.value">'
+        + W.map(w=>'<option value="'+w.id+'"'+(w.id===lastW?' selected':'')+'>'
+            + esc(w.name)+(w.role?' · '+esc(w.role):'')+'</option>').join('')
         + '</select>'
-        + '<select id="lTask" class="wsel" style="margin-top:8px">'
-        + (P.length ? P : j.plan).map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('')
+        + '<select id="lTask" class="wsel" style="margin-top:8px" onchange="lastT=this.value">'
+        + TL.map(t=>'<option value="'+t.id+'"'+(t.id===lastT?' selected':'')+'>'+esc(t.name)+'</option>').join('')
         + '</select>'
-        + '<input id="eDate" type="date" value="'+today()+'" style="margin:8px 0 10px">'
+        + '<input id="eDate" type="date" value="'+lastD+'" onchange="lastD=this.value" style="margin:8px 0 10px">'
         + '<button class="btn" onclick="addAttend()">Энэ өдөр ажилласан</button></div>';
     }
 
@@ -1372,7 +1413,8 @@ function toggleDone(){
   save(); render();
 }
 
-function openJob(id){ openId=id; tab='exp'; editContract=false; ui={}; pickOpen=false; render(); }
+function openJob(id){ openId=id; tab='exp'; editContract=false; ui={}; pickOpen=false;
+  lastW=''; lastT=''; lastD=''; openW=false; openM=false; render(); }
 
 function addJob(){
   const name = document.getElementById('nName').value.trim();
@@ -1484,7 +1526,7 @@ function addTask(){
   const d = parseFloat(String(document.getElementById('tnDays').value).replace(',','.')) || 0;
   if(!name){ alert('Ажлын нэрээ оруулна уу.'); return; }
   j.plan = j.plan || [];
-  j.plan.push({id: uid(), name, days: d});
+  j.plan.push({id: uid(), name, days: d, pct: 0});
   save(); ui={}; render();
 }
 
@@ -1498,10 +1540,20 @@ function saveTask(tid){
   save(); ui={}; render();
 }
 
+function setTaskPct(tid, v){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const t = (j.plan||[]).find(x=>x.id===tid); if(!t) return;
+  const n = Math.max(0, Math.min(100, parseInt(v,10)||0));
+  t.pct = n;
+  if(n >= 100) t.done = true; else delete t.done;
+  save(); render();
+}
+
 function toggleTask(tid){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const t = (j.plan||[]).find(x=>x.id===tid); if(!t) return;
-  if(t.done) delete t.done; else t.done = true;
+  if(t.done){ delete t.done; t.pct = 90; }
+  else { t.done = true; t.pct = 100; }
   save(); render();
 }
 
@@ -1519,6 +1571,7 @@ function addAttend(){
   const tid = document.getElementById('lTask').value;
   const dt = document.getElementById('eDate').value || today();
   if(!wid || !tid){ alert('Ажилтан болон гүйцэтгэх ажлаа сонгоно уу.'); return; }
+  lastW = wid; lastT = tid; lastD = dt;
   j.labor = j.labor || [];
   if(j.labor.some(e => e.workerId===wid && e.taskId===tid && e.date===dt)){
     const w = (j.workers||[]).find(x=>x.id===wid);
