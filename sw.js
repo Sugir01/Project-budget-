@@ -1,5 +1,6 @@
-const CACHE = 'ajil-zardal-v3';
-const ASSETS = ['./manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'ajil-zardal-v4';
+const ASSETS = ['./manifest.json', './icon-192.png', './icon-512.png',
+  './icon-mask-192.png', './icon-mask-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
