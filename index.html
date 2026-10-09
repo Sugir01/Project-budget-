@@ -41,6 +41,11 @@ input:focus{border-color:var(--ink)}
 .hero .plabel{color:rgba(255,255,255,.6)}
 .pval{font-size:17px;font-weight:700;letter-spacing:-.01em}
 .pos{color:var(--good)} .neg{color:var(--bad)}
+.psub{font-size:12px;margin-top:5px;padding-top:5px;border-top:1px solid rgba(0,0,0,.07);line-height:1.35}
+.hero .psub{border-top-color:rgba(255,255,255,.15)}
+.psub .pl{color:var(--muted);display:block}
+.hero .psub .pl{color:rgba(255,255,255,.55)}
+.psub b{font-size:13.5px}
 .hero .pos{color:#8FD3AE} .hero .neg{color:#F08A7A}
 .meta{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;flex-wrap:wrap}
 .hero .meta{border-top-color:rgba(255,255,255,.15)}
@@ -492,9 +497,18 @@ const bonusTotal = j => (j.bonuses||[]).reduce((s,b)=>s+b.amount,0);
 const manDays = j => new Set((j.labor||[]).map(e=>e.workerId+'|'+e.date)).size;
 const nd = v => (Math.round(v*10)/10).toString();
 
-function pair(label, value){
-  return '<div class="pair"><div class="plabel">'+label+'</div><div class="pval '+(value<0?'neg':'pos')+'">'+fmt(value)+'</div></div>';
+function pair(label, value, sub){
+  return '<div class="pair"><div class="plabel">'+label+'</div>'
+    + '<div class="pval '+(value<0?'neg':'pos')+'">'+fmt(value)+'</div>'
+    + (sub ? '<div class="psub"><span class="pl">'+sub.label+'</span>'
+        + '<b class="'+(sub.value<0?'neg':'pos')+'">'+fmt(sub.value)+'</b></div>' : '')
+    + '</div>';
 }
+
+// олгоогүй цалин
+const wageDue = j => Math.max(0, wageAccrued(j) - wagePaid(j));
+const wageDueAll = arr => arr.reduce((s,j)=>s+wageDue(j), 0);
+const SUBL = 'Олгоогүй цалин хассан';
 
 function render(){
   if(!window.FB){ document.getElementById('app').innerHTML =
@@ -523,6 +537,7 @@ function listView(){
   const tA = active.reduce((s,j)=>s+assetVal(j),0);
   const tW = active.reduce((s,j)=>s+workDays(j),0);
   const allA = jobs.reduce((s,j)=>s+assetVal(j),0);
+  const tW2 = wageDueAll(active);
 
   let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">'
     + '<span style="font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
@@ -544,7 +559,8 @@ function listView(){
   }
 
   h += '<div class="hero"><div style="font-size:13px;opacity:.6">Явагдаж буй ажлуудын нэгдсэн дүн</div>'
-    + '<div class="pairs">' + pair('Гэрээнээс гарах ашиг', tC-tS) + pair('Орлогоос гарсан баланс', tE-tS) + '</div>'
+    + '<div class="pairs">' + pair('Гэрээнээс гарах ашиг', tC-tS, tW2>0?{label:SUBL, value:tC-tS-tW2}:null)
+    + pair('Орлогоос гарсан баланс', tE-tS, tW2>0?{label:SUBL, value:tE-tS-tW2}:null) + '</div>'
     + '<div class="meta">'
     + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(tC)+'</div></div>'
     + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(tE)+'</div></div>'
@@ -594,11 +610,12 @@ function listView(){
   if(active.length===0 && !newJob) h += '<div class="empty" style="margin-top:14px">Явагдаж буй ажил алга. Шинэ ажил үүсгэнэ үү.</div>';
 
   active.forEach(j=>{
-    const s = spent(j), cb = j.contract - s, ib = earned(j) - s, av = assetVal(j);
+    const s = spent(j), cb = j.contract - s, ib = earned(j) - s, av = assetVal(j), wd = wageDue(j);
     const pct = j.contract>0 ? Math.min(s/j.contract*100,100) : 0;
     h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
       + '<div class="jname">'+esc(j.name)+typeTag(j)+(lagOf(j)>=10?'<span class="wtag">анхаар</span>':'')+'</div>'
-      + '<div class="pairs">'+pair('Гэрээний баланс',cb)+pair('Орлогын баланс',ib)+'</div>'
+      + '<div class="pairs">'+pair('Гэрээний баланс',cb, wd>0?{label:SUBL, value:cb-wd}:null)
+      + pair('Орлогын баланс',ib, wd>0?{label:SUBL, value:ib-wd}:null)+'</div>'
       + progBars(j)
       + '<div class="sub">Гэрээ '+fmt(j.contract)+' · Орлого '+fmt(earned(j))+' · Зардал '+fmt(s)
       + (av>0 ? '<br>Үүнээс үндсэн хөрөнгө '+fmt(av) : '')
@@ -755,7 +772,7 @@ function chartSvg(j){
 }
 
 function detailView(j){
-  const s = spent(j), e = earned(j), av = assetVal(j);
+  const s = spent(j), e = earned(j), av = assetVal(j), wd = wageDue(j);
   let h = (syncErr ? '<div class="warn" style="margin:0 0 12px">Сервертэй холбогдоход алдаа: '
       + esc(syncErr)+'</div>' : '')
     + '<button class="link" onclick="openId=null;editContract=false;render()">← '
@@ -766,7 +783,8 @@ function detailView(j){
     + '<div class="chips" style="margin:10px 0 0">' + TYPES.map(t =>
         '<button class="chip'+(j.type===t.k?' on':'')+'" onclick="setType(\''+t.k+'\')">'+t.t+'</button>'
       ).join('') + '</div>'
-    + '<div class="pairs">'+pair('Гэрээний дүнгээс гарсан баланс', j.contract-s)+pair('Орлогоос гарсан баланс', e-s)+'</div>'
+    + '<div class="pairs">'+pair('Гэрээний дүнгээс гарсан баланс', j.contract-s, wd>0?{label:SUBL, value:j.contract-s-wd}:null)
+    + pair('Орлогоос гарсан баланс', e-s, wd>0?{label:SUBL, value:e-s-wd}:null)+'</div>'
     + '<div class="meta"><div><div class="mlabel">Гэрээний дүн</div>';
   if(editContract){
     h += '<div class="h2"><input id="cEdit" inputmode="numeric" oninput="liveNum(this)" value="'+group(j.contract)+'" style="width:130px;padding:7px 9px;font-size:15px">'
@@ -1244,11 +1262,13 @@ function typesView(){
     const C = g.list.reduce((s,j)=>s+j.contract,0);
     const E = g.list.reduce((s,j)=>s+earned(j),0);
     const S = g.list.reduce((s,j)=>s+spent(j),0);
+    const Wd = wageDueAll(g.list);
     h += '<div class="card" style="border-left:4px solid '+g.t.c+';margin-bottom:14px">'
       + '<div style="display:flex;justify-content:space-between;align-items:baseline">'
       + '<span style="font-size:17px;font-weight:600">'+g.t.t+'</span>'
       + '<span style="font-size:13px;color:var(--muted)">'+g.list.length+' ажил</span></div>'
-      + '<div class="pairs">'+pair('Гэрээнээс гарах ашиг', C-S)+pair('Орлогоос гарсан баланс', E-S)+'</div>'
+      + '<div class="pairs">'+pair('Гэрээнээс гарах ашиг', C-S, Wd>0?{label:SUBL, value:C-S-Wd}:null)
+      + pair('Орлогоос гарсан баланс', E-S, Wd>0?{label:SUBL, value:E-S-Wd}:null)+'</div>'
       + '<div class="meta"><div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(C)+'</div></div>'
       + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(E)+'</div></div>'
       + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(S)+'</div></div></div>';
@@ -1289,25 +1309,28 @@ function doneView(){
   const dS = done.reduce((s,j)=>s+spent(j),0);
   const dE = done.reduce((s,j)=>s+earned(j),0);
   const dA = done.reduce((s,j)=>s+assetVal(j),0);
-  const dW = done.reduce((s,j)=>s+workDays(j),0);
+  const dW_days = done.reduce((s,j)=>s+workDays(j),0);
+  const dW = wageDueAll(done);
 
   let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>'
     + '<div class="hero"><div style="font-size:13px;opacity:.6">Дууссан '+done.length
     + ' ажлын нэгдсэн дүн</div>'
-    + '<div class="pairs">' + pair('Гэрээнээс гарсан ашиг', dC-dS) + pair('Орлогоос гарсан баланс', dE-dS) + '</div>'
+    + '<div class="pairs">' + pair('Гэрээнээс гарсан ашиг', dC-dS, dW>0?{label:SUBL, value:dC-dS-dW}:null)
+    + pair('Орлогоос гарсан баланс', dE-dS, dW>0?{label:SUBL, value:dE-dS-dW}:null) + '</div>'
     + '<div class="meta">'
     + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(dC)+'</div></div>'
     + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(dE)+'</div></div>'
     + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(dS)+'</div></div>'
     + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(dA)+'</div></div>'
-    + (dW>0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+dW+'</div></div>' : '')
+    + (dW_days>0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+dW_days+'</div></div>' : '')
     + '</div></div>';
   if(done.length===0) return h + '<div class="note">Дууссан ажил алга.</div>';
   done.forEach(j=>{
-    const s = spent(j), ib = earned(j) - s;
+    const s = spent(j), ib = earned(j) - s, wd = wageDue(j);
     h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
       + '<div class="jname">'+esc(j.name)+'</div>'
-      + '<div class="pairs">'+pair('Гэрээний баланс', j.contract-s)+pair('Орлогын баланс', ib)+'</div>'
+      + '<div class="pairs">'+pair('Гэрээний баланс', j.contract-s, wd>0?{label:SUBL, value:j.contract-s-wd}:null)
+      + pair('Орлогын баланс', ib, wd>0?{label:SUBL, value:ib-wd}:null)+'</div>'
       + '<div class="sub" style="margin-top:10px">Дууссан '+(j.doneDate||'')
       + ' · Гэрээ '+fmt(j.contract)+' · Орлого '+fmt(earned(j))+' · Зардал '+fmt(s)+'</div></button>';
   });
