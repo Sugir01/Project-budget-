@@ -466,7 +466,13 @@ const taskPct = t => t.done ? 100 : (t.pct||0);
 const earnedDays = j => (j.plan||[]).reduce((s,t)=>s+(t.days||0)*taskPct(t)/100, 0);
 const hasPlan = j => (j.plan||[]).length > 0 && planDays(j) > 0;
 const jobProgress = j => hasPlan(j) ? earnedDays(j)/planDays(j)*100 : (j.progress||0);
-const taskUsed = (j,tid) => (j.labor||[]).filter(e=>e.taskId===tid).reduce((s,e)=>s+(e.people||1),0);
+const dayShare = (j,wid,dt) => {
+  const n = (j.labor||[]).filter(e=>e.workerId===wid && e.date===dt).length;
+  return n ? 1/n : 0;
+};
+const taskUsed = (j,tid) => (j.labor||[])
+  .filter(e=>e.taskId===tid)
+  .reduce((s,e)=>s + dayShare(j, e.workerId, e.date), 0);
 const taskOf = (j,tid) => (j.plan||[]).find(t=>t.id===tid);
 const MONN = ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар',
   '7-р сар','8-р сар','9-р сар','10-р сар','11-р сар','12-р сар'];
@@ -475,14 +481,14 @@ function shiftYM(ym, n){
   y += Math.floor(m/12); m = ((m%12)+12)%12;
   return y + '-' + String(m+1).padStart(2,'0');
 }
-const wkDays = (j,wid) => (j.labor||[]).filter(e=>e.workerId===wid).reduce((s,e)=>s+e.people,0);
+const wkDays = (j,wid) => new Set((j.labor||[]).filter(e=>e.workerId===wid).map(e=>e.date)).size;
 const wkPaidDays = (j,wid) => (j.wagePays||[]).filter(p=>p.workerId===wid).reduce((s,p)=>s+p.days,0);
 const wkDue = (j,w) => (wkDays(j,w.id) - wkPaidDays(j,w.id)) * w.rate;
 const wageAccrued = j => (j.workers||[]).reduce((s,w)=>s+wkDays(j,w.id)*w.rate,0);
 const wagePaid = j => (j.wagePays||[]).reduce((s,p)=>s+p.amount,0);
 const wkBonus = (j,wid) => (j.bonuses||[]).filter(b=>b.workerId===wid).reduce((s,b)=>s+b.amount,0);
 const bonusTotal = j => (j.bonuses||[]).reduce((s,b)=>s+b.amount,0);
-const manDays = j => (j.labor||[]).reduce((s,e)=>s+e.people,0);
+const manDays = j => new Set((j.labor||[]).map(e=>e.workerId+'|'+e.date)).size;
 const nd = v => (Math.round(v*10)/10).toString();
 
 function pair(label, value){
@@ -887,7 +893,9 @@ function detailView(j){
         + TL.map(t=>'<option value="'+t.id+'"'+(t.id===lastT?' selected':'')+'>'+esc(t.name)+'</option>').join('')
         + '</select>'
         + '<input id="eDate" type="date" value="'+lastD+'" onchange="lastD=this.value;render()" style="margin:8px 0 2px">'
-        + '<div class="rdate" style="margin:6px 0 2px">Энэ өдөр ажилласан хүмүүсээ тэмдэглэнэ үү</div>'
+        + '<div class="rdate" style="margin:6px 0 2px">Энэ өдөр ажилласан хүмүүсээ тэмдэглэнэ үү. '
+        + 'Нэг хүний нэг өдөр = 1 хүн өдөр, 1 өдрийн цалин — хэдэн ажил дээр ажилласан нь '
+        + 'ажлууд хооронд хуваагдан бодогдоно.</div>'
         + '<div style="margin-bottom:10px">'
         + W.map(w => '<label class="wrow'+(marked[w.id]?' has':'')+'">'
             + '<input type="checkbox" class="wchk" value="'+w.id+'"'+(marked[w.id]?' checked':'')+'>'
@@ -1499,7 +1507,7 @@ function calendarBox(j, w){
     const on = byDay[d];
     h += '<button class="dy'+(on?' on':'')+(ds===today()?' tdy':'')+'" '
       + 'onclick="ui.calDay=\''+ds+'\';render()">'+d
-      + (on && on.length>1 ? '<i>'+on.length+'</i>' : '')+'</button>';
+      + (on && on.length>1 ? '<i>'+on.length+' ажил</i>' : '')+'</button>';
   }
   h += '</div><div class="rdate" style="text-align:center">Энэ сард '+ent.length+' өдөр ажилласан</div>';
 
@@ -1510,12 +1518,16 @@ function calendarBox(j, w){
     if(list.length === 0){
       h += '<div class="rdate">Энэ өдөр ирц бүртгэгдээгүй.</div>';
     } else {
+      const share = 1 / list.length;
       list.forEach(e => {
         const t = taskOf(j, e.taskId);
         h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0">'
-          + '<span style="font-size:14px">'+esc(t ? t.name : 'Ажилласан')+'</span>'
-          + '<button class="x" onclick="delLabor(\''+e.id+'\')">×</button></div>';
+          + '<span style="font-size:14px;min-width:0">'+esc(t ? t.name : 'Ажилласан')+'</span>'
+          + '<div style="display:flex;align-items:center;gap:6px;flex:none">'
+          + '<span class="rdate">'+nd(Math.round(share*100)/100)+' хүн өдөр</span>'
+          + '<button class="x" onclick="delLabor(\''+e.id+'\')">×</button></div></div>';
       });
+      h += '<div class="rdate" style="margin-top:6px">Энэ өдөр нийт 1 хүн өдөр, 1 өдрийн цалин бодогдоно.</div>';
     }
     h += '</div>';
   }
