@@ -991,6 +991,7 @@ function detailView(j){
           return;
         }
         const d = wkDays(j,w.id), pd = wkPaidDays(j,w.id), due = wkDue(j,w), bn = wkBonus(j,w.id);
+        const pend = w.lead ? leadShare(j, w.id) : 0;
         h += '<div style="padding:12px 0;border-bottom:1px solid #EFF2EE">'
           + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
           + '<span style="font-weight:600;font-size:15.5px">'+esc(w.name)
@@ -998,35 +999,19 @@ function detailView(j){
           + (w.lead ? '<span class="lead">удирдагч</span>' : '')+'</span>'
           + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(w.rate)+' / өдөр</span></div>'
           + '<div class="sub" style="margin:7px 0 10px">Ажилласан '+nd(d)+' өдөр · Олгосон '+nd(pd)
-          + ' өдөр · Үлдэгдэл <b style="color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</b>'
-          + (bn>0 ? '<br>Урамшуулал: <b style="color:var(--good)">'+fmt(bn)+'</b>' : '')+'</div>'
+          + ' өдөр · Олгоогүй цалин <b style="color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</b>'
+          + (pend>0 ? '<br>Ногдох ашгийн урамшуулал: <b style="color:var(--good)">'+fmt(pend)+'</b>' : '')
+          + (bn>0 ? '<br>Олгосон урамшуулал: <b>'+fmt(bn)+'</b>' : '')+'</div>'
           + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
           + '<button class="small" onclick="openCal(\''+w.id+'\')">Ирц</button>'
-          + '<button class="small"'+(w.lead?' style="border-color:#BBD4C4;color:var(--good)"':'')
-          + ' onclick="toggleLead(\''+w.id+'\')">'+(w.lead?'Удирдагч ✓':'Удирдагч болгох')+'</button>'
-          + '<button class="small" onclick="ui={pay:\''+w.id+'\'};render()">Цалин олгох</button>'
-          + '<button class="small" onclick="ui={bon:\''+w.id+'\'};render()">Урамшуулал</button>'
+          + (isAdmin()
+              ? '<button class="small"'+(w.lead?' style="border-color:#BBD4C4;color:var(--good)"':'')
+                + ' onclick="toggleLead(\''+w.id+'\')">'+(w.lead?'Удирдагч ✓':'Удирдагч болгох')+'</button>'
+              : '')
           + '<button class="small" onclick="ui={wEdit:\''+w.id+'\'};render()">Засах</button>'
           + '<button class="small warn" onclick="ui={wDel:\''+w.id+'\'};render()">Устгах</button></div>';
 
         if(ui.cal && ui.cal.wid === w.id) h += calendarBox(j, w);
-        if(ui.pay === w.id){
-          const left = d - pd;
-          h += '<div class="inf" style="margin:10px 0 0">'
-            + '<div class="rdate" style="margin-bottom:6px">Үлдэгдэл '+nd(left>0?left:0)+' өдөр · '+fmt(w.rate)+'/өдөр</div>'
-            + '<input id="payDays" inputmode="decimal" placeholder="Хэдэн өдрийн цалин" value="'+nd(left>0?left:0)+'">'
-            + '<input id="payDate" type="date" value="'+today()+'">'
-            + '<div class="btns"><button class="btn" onclick="payWage(\''+w.id+'\')">Олгох</button>'
-            + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
-        }
-        if(ui.bon === w.id){
-          h += '<div class="inf" style="margin:10px 0 0">'
-            + '<input id="bonAmt" inputmode="numeric" oninput="liveNum(this)" placeholder="Урамшууллын дүн (₮)">'
-            + '<input id="bonNote" placeholder="Шалтгаан (сайн ажилласан, илүү цаг…)">'
-            + '<input id="bonDate" type="date" value="'+today()+'">'
-            + '<div class="btns"><button class="btn" onclick="payBonus(\''+w.id+'\')">Олгох</button>'
-            + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
-        }
         if(ui.wDel === w.id){
           h += confirmBox(esc(w.name)+' — ирцийн бичилттэй нь устгах уу? Олгосон цалин зардалд үлдэнэ.',
                           "delWorker('"+w.id+"')");
@@ -1949,6 +1934,7 @@ function leadShare(j, wid){
 }
 
 function bonusBox(j, W){
+  if(!isAdmin()) return '';
   const c = bonusCalc(j, W);
   let h = '<div class="sect"><button class="hd" onclick="openB=!openB;render()">'
     + '<span>Удирдагчдын ашгийн урамшуулал'
@@ -1982,7 +1968,7 @@ function bonusBox(j, W){
   }
 
   h += '<div class="rdate" style="margin:2px 0 6px">Удирдагч бүрт ажилласан өдрийн тоогоор '
-    + 'автоматаар хуваарилагдана.</div>';
+    + 'автоматаар хуваарилагдана. Энд зөвхөн тооцоо харагдана.</div>';
 
   c.leads.forEach(w => {
     const d = wkDays(j, w.id);
@@ -1998,9 +1984,10 @@ function bonusBox(j, W){
   });
 
   if(c.totalDays > 0){
-    h += '<button class="btn" style="margin-top:12px;background:var(--good)" onclick="payProfitBonus()">'
-      + c.picked.length+' удирдагчид '+fmt(c.pool)+' олгох</button>'
-      + '<div class="rdate" style="margin-top:7px">Ажилчид цэснээс цалинтай хамт олгож болно.</div>';
+    h += '<div class="okmsg" style="margin-top:10px">Олголтыг нүүр хуудасны "Ажилчид" цэснээс '
+      + 'тухайн хүний цалинтай хамт хийнэ.</div>';
+  } else if(c.paidL.length === c.leads.length && c.leads.length > 0){
+    h += '<div class="okmsg" style="margin-top:10px">Бүх удирдагчид олгогдсон.</div>';
   } else {
     h += '<div class="note" style="padding:8px 0 0">Олгох урамшуулал алга.</div>';
   }
