@@ -142,6 +142,15 @@ textarea{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--l
 .wrow input{width:21px;height:21px;accent-color:var(--blue);flex:none;margin:0}
 .wrow .nm{flex:1;min-width:0;font-size:15px}
 .wrow .rl{font-size:12px;color:var(--muted)}
+.lead{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:4px;background:#E7EFE9;
+  color:var(--good);font-size:11px;font-weight:600;vertical-align:2px}
+.brow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #EFF2EE}
+.brow:last-child{border-bottom:none}
+.brow input[type=checkbox]{width:21px;height:21px;accent-color:var(--good);flex:none;margin:0}
+.brow .rdate{display:block}
+.calc{background:#F2F5F1;border-radius:10px;padding:12px 13px;margin:10px 0}
+.calc .ln{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;padding:4px 0}
+.calc .ln.tot{border-top:1px solid var(--line);margin-top:6px;padding-top:9px;font-weight:600;font-size:15px}
 .wrow.has{background:#F2F7F4;margin:0 -8px;padding:9px 8px;border-radius:7px;border-bottom:none}
 .task{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:11px 0;
   border-bottom:1px solid #EFF2EE}
@@ -215,7 +224,9 @@ let jobs = [];
 let roster = [];
 let pickOpen = false;
 let ui = {};
-let openW = false, openM = false;
+let openW = false, openM = false, openB = false;
+let openDone = {};
+let bonPick = {};
 let lastW = '', lastT = '', lastD = '';
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
@@ -243,6 +254,7 @@ const norm = j => ({
   wagePays: j.wagePays||[],
   bonuses: j.bonuses||[],
   plan: j.plan||[],
+  coPct: j.coPct || 0,
   members: j.members||[],
   expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
 });
@@ -258,7 +270,7 @@ function clean(v){
 }
 
 const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses','plan'];
-const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt'];
+const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct'];
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
 const isAdmin = () => !!me && me === admin;
@@ -982,13 +994,16 @@ function detailView(j){
         h += '<div style="padding:12px 0;border-bottom:1px solid #EFF2EE">'
           + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
           + '<span style="font-weight:600;font-size:15.5px">'+esc(w.name)
-          + (w.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(w.role)+'</span>' : '')+'</span>'
+          + (w.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(w.role)+'</span>' : '')
+          + (w.lead ? '<span class="lead">удирдагч</span>' : '')+'</span>'
           + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(w.rate)+' / өдөр</span></div>'
           + '<div class="sub" style="margin:7px 0 10px">Ажилласан '+nd(d)+' өдөр · Олгосон '+nd(pd)
           + ' өдөр · Үлдэгдэл <b style="color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</b>'
           + (bn>0 ? '<br>Урамшуулал: <b style="color:var(--good)">'+fmt(bn)+'</b>' : '')+'</div>'
           + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
           + '<button class="small" onclick="openCal(\''+w.id+'\')">Ирц</button>'
+          + '<button class="small"'+(w.lead?' style="border-color:#BBD4C4;color:var(--good)"':'')
+          + ' onclick="toggleLead(\''+w.id+'\')">'+(w.lead?'Удирдагч ✓':'Удирдагч болгох')+'</button>'
           + '<button class="small" onclick="ui={pay:\''+w.id+'\'};render()">Цалин олгох</button>'
           + '<button class="small" onclick="ui={bon:\''+w.id+'\'};render()">Урамшуулал</button>'
           + '<button class="small" onclick="ui={wEdit:\''+w.id+'\'};render()">Засах</button>'
@@ -1048,6 +1063,8 @@ function detailView(j){
       h += '</div>';
     }
     h += '</div>';
+
+    h += bonusBox(j, W);
 
     h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
         : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
@@ -1309,6 +1326,7 @@ function doneView(){
   const dS = done.reduce((s,j)=>s+spent(j),0);
   const dE = done.reduce((s,j)=>s+earned(j),0);
   const dA = done.reduce((s,j)=>s+assetVal(j),0);
+  const dMD = done.reduce((s,j)=>s+manDays(j),0);
   const dW_days = done.reduce((s,j)=>s+workDays(j),0);
   const dW = wageDueAll(done);
 
@@ -1322,18 +1340,87 @@ function doneView(){
     + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(dE)+'</div></div>'
     + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(dS)+'</div></div>'
     + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(dA)+'</div></div>'
+    + (dMD>0 ? '<div><div class="mlabel">Хүн өдөр</div><div class="mval">'+nd(dMD)+'</div></div>' : '')
     + (dW_days>0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+dW_days+'</div></div>' : '')
     + '</div></div>';
-  if(done.length===0) return h + '<div class="note">Дууссан ажил алга.</div>';
-  done.forEach(j=>{
-    const s = spent(j), ib = earned(j) - s, wd = wageDue(j);
-    h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
-      + '<div class="jname">'+esc(j.name)+'</div>'
-      + '<div class="pairs">'+pair('Гэрээний баланс', j.contract-s, wd>0?{label:SUBL, value:j.contract-s-wd}:null)
-      + pair('Орлогын баланс', ib, wd>0?{label:SUBL, value:ib-wd}:null)+'</div>'
-      + '<div class="sub" style="margin-top:10px">Дууссан '+(j.doneDate||'')
-      + ' · Гэрээ '+fmt(j.contract)+' · Орлого '+fmt(earned(j))+' · Зардал '+fmt(s)+'</div></button>';
+
+  if(done.length === 0) return h + '<div class="note">Дууссан ажил алга.</div>';
+
+  const groups = [
+    {k:'dsg', t:'Ажлын зураг', c:'#6B4C8A', list: done.filter(j=>j.type==='dsg')},
+    {k:'asm', t:'Угсралт',     c:'#2A5F7A', list: done.filter(j=>j.type==='asm')}
+  ];
+  const un = done.filter(j => j.type !== 'dsg' && j.type !== 'asm');
+  if(un.length) groups.push({k:'none', t:'Ангилаагүй', c:'#8A9499', list: un});
+
+  groups.forEach(g => {
+    const C = g.list.reduce((s,j)=>s+j.contract,0);
+    const S = g.list.reduce((s,j)=>s+spent(j),0);
+    const E = g.list.reduce((s,j)=>s+earned(j),0);
+    const B = g.list.reduce((s,j)=>s+bonusTotal(j),0);
+    const MD = g.list.reduce((s,j)=>s+manDays(j),0);
+    const WD = g.list.reduce((s,j)=>s+workDays(j),0);
+    const profit = C - S;
+    const pure = profit + B;                       // урамшуулал тооцоогүй
+    const pc = C ? profit / C * 100 : 0;
+    const pp = C ? pure / C * 100 : 0;
+
+    h += '<div class="card" style="border-left:4px solid '+g.c+';margin-bottom:14px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline">'
+      + '<span style="font-size:17px;font-weight:600">'+g.t+'</span>'
+      + '<span style="font-size:13px;color:var(--muted)">'+g.list.length+' ажил</span></div>';
+
+    if(g.list.length === 0){
+      h += '<div class="note" style="padding:10px 0 0">Дууссан ажил алга.</div></div>';
+      return;
+    }
+
+    h += '<div class="pairs">'
+      + '<div class="pair"><div class="plabel">Цэвэр ашиг</div>'
+      + '<div class="pval '+(profit<0?'neg':'pos')+'">'+fmt(profit)+'</div>'
+      + '<div class="psub"><span class="pl">Ашгийн хувь</span>'
+      + '<b class="'+(pc<0?'neg':'pos')+'">'+pc.toFixed(1)+'%</b></div></div>'
+      + '<div class="pair"><div class="plabel">Урамшуулалгүй ашиг</div>'
+      + '<div class="pval '+(pure<0?'neg':'pos')+'">'+fmt(pure)+'</div>'
+      + '<div class="psub"><span class="pl">Ашгийн хувь</span>'
+      + '<b class="'+(pp<0?'neg':'pos')+'">'+pp.toFixed(1)+'%</b></div></div></div>'
+      + '<div class="meta">'
+      + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(C)+'</div></div>'
+      + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(E)+'</div></div>'
+      + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(S)+'</div></div>'
+      + (B>0 ? '<div><div class="mlabel">Урамшуулал</div><div class="mval">'+fmt(B)+'</div></div>' : '')
+      + (MD>0 ? '<div><div class="mlabel">Хүн өдөр</div><div class="mval">'+nd(MD)+'</div></div>' : '')
+      + (WD>0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+WD+'</div></div>' : '')
+      + '</div>';
+
+    const op = !!openDone[g.k];
+    h += '<button class="hd" style="padding:12px 0 2px;width:100%;display:flex;justify-content:space-between;'
+      + 'align-items:center;background:none;border:none;border-top:1px solid var(--line);margin-top:12px;'
+      + 'cursor:pointer;font-size:14px;font-weight:600;color:var(--ink)" onclick="toggleDoneGrp(\''+g.k+'\')">'
+      + '<span>Ажлууд <span class="cnt" style="color:var(--muted);font-weight:400">· '+g.list.length+'</span></span>'
+      + '<span class="arw'+(op?' op':'')+'">\u203A</span></button>';
+
+    if(op){
+      h += '<div style="margin-top:4px">';
+      g.list.forEach(j => {
+        const sp = spent(j), pf = j.contract - sp;
+        const p = j.contract ? pf / j.contract * 100 : 0;
+        h += '<div style="padding:11px 0;border-bottom:1px solid #EFF2EE;cursor:pointer" '
+          + 'onclick="openJob(\''+j.id+'\')">'
+          + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+          + '<span style="font-size:15px;font-weight:500">'+esc(j.name)+'</span>'
+          + '<span class="'+(pf<0?'neg':'pos')+'" style="font-weight:600;white-space:nowrap">'
+          + fmt(pf)+' · '+p.toFixed(1)+'%</span></div>'
+          + '<div class="rdate" style="margin-top:3px">Дууссан '+(j.doneDate||'—')
+          + ' · Гэрээ '+fmt(j.contract)+' · Зардал '+fmt(sp)
+          + (manDays(j)>0 ? ' · '+nd(manDays(j))+' хүн өдөр' : '')
+          + (bonusTotal(j)>0 ? ' · урамшуулал '+fmt(bonusTotal(j)) : '')+'</div></div>';
+      });
+      h += '</div>';
+    }
+    h += '</div>';
   });
+
   return h;
 }
 
@@ -1460,7 +1547,7 @@ function toggleDone(){
 }
 
 function openJob(id){ openId=id; tab='exp'; editContract=false; ui={}; pickOpen=false;
-  lastW=''; lastT=''; lastD=''; openW=false; openM=false; render(); }
+  lastW=''; lastT=''; lastD=''; openW=false; openM=false; openB=false; bonPick={}; render(); }
 
 function addJob(){
   const name = document.getElementById('nName').value.trim();
@@ -1682,6 +1769,121 @@ function payWage(wid){
   j.expenses.push({id: eid, desc: 'Цалин — '+w.name+' ('+nd(d)+' өдөр)', amount,
     date: dt, cat: 'wage', asset: false});
   save(); ui={}; render();
+}
+
+function bonusCalc(j, Wall){
+  const W = (Wall||[]).filter(w => w.lead);
+  const pct = j.coPct || 0;
+  const cost = spent(j) + wageDue(j);
+  const gross = j.contract - cost;
+  const coShare = j.contract * pct / 100;
+  const pool = gross - coShare;
+  const picked = W.filter(w => bonPick[w.id]);
+  const totalDays = picked.reduce((t,w)=>t+wkDays(j,w.id), 0);
+  return {pct, cost, gross, coShare, pool, picked, totalDays};
+}
+
+function bonusBox(j, W){
+  const c = bonusCalc(j, W);
+  let h = '<div class="sect"><button class="hd" onclick="openB=!openB;render()">'
+    + '<span>Удирдагчдын ашгийн урамшуулал'
+    + (c.pool > 0 ? ' <span class="cnt">· хуваарилах '+fmt(c.pool)+'</span>' : '')+'</span>'
+    + '<span class="arw'+(openB?' op':'')+'">\u203A</span></button>';
+  if(!openB) return h + '</div>';
+
+  h += '<div class="bd">'
+    + '<div class="mlabel" style="margin-bottom:6px">Компанийн ашиг (гэрээний дүнгээс %)</div>'
+    + '<div style="display:flex;align-items:center;gap:10px">'
+    + '<input type="range" min="0" max="60" step="1" value="'+c.pct+'" '
+    + 'oninput="document.getElementById(\'coPv\').textContent=this.value+\'%\'" '
+    + 'onchange="setCoPct(this.value)" style="flex:1">'
+    + '<b id="coPv" style="font-size:15px;width:44px;text-align:right">'+c.pct+'%</b></div>'
+    + '<div class="calc">'
+    + '<div class="ln"><span>Гэрээний дүн</span><b>'+fmt(j.contract)+'</b></div>'
+    + '<div class="ln"><span>Нийт зардал</span><b>\u2212'+fmt(spent(j))+'</b></div>'
+    + (wageDue(j) > 0 ? '<div class="ln"><span>Олгоогүй цалин</span><b>\u2212'+fmt(wageDue(j))+'</b></div>' : '')
+    + '<div class="ln"><span>Үлдэх ашиг</span><b class="'+(c.gross<0?'neg':'pos')+'">'+fmt(c.gross)+'</b></div>'
+    + '<div class="ln"><span>Компанийн ашиг ('+c.pct+'%)</span><b>\u2212'+fmt(c.coShare)+'</b></div>'
+    + '<div class="ln tot"><span>Хуваарилах сан</span>'
+    + '<b class="'+(c.pool<0?'neg':'pos')+'">'+fmt(c.pool)+'</b></div></div>';
+
+  if(c.pool <= 0){
+    return h + '<div class="warn" style="margin:0">Хуваарилах ашиг алга. Компанийн ашгийн хувийг '
+      + 'бууруулах, эсвэл зардлаа хянах хэрэгтэй.</div></div></div>';
+  }
+  const LEADS = (W||[]).filter(w => w.lead);
+  if(LEADS.length === 0){
+    return h + '<div class="note" style="padding:0">Удирдагч тэмдэглээгүй байна. Дээрх "Ажилчид" '
+      + 'хэсгээс хүн бүр дээр "Удирдагч болгох" дарж тэмдэглэнэ үү.</div></div></div>';
+  }
+
+  h += '<div class="rdate" style="margin:2px 0 6px">Урамшуулал авах удирдагчдаа тэмдэглэнэ үү. '
+    + 'Сан нь ажилласан өдрийн тоогоор хувьчлагдана.</div>';
+
+  LEADS.forEach(w => {
+    const d = wkDays(j, w.id);
+    const on = !!bonPick[w.id];
+    const share = (on && c.totalDays) ? c.pool * d / c.totalDays : 0;
+    h += '<label class="brow">'
+      + '<input type="checkbox"'+(on?' checked':'')+(d>0?'':' disabled')
+      + ' onchange="toggleBonPick(\''+w.id+'\')">'
+      + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(w.name)+'</span>'
+      + '<span class="rdate">'+nd(d)+' өдөр'
+      + (on && c.totalDays ? ' \u00B7 '+Math.round(d/c.totalDays*100)+'%' : '')+'</span></span>'
+      + '<b style="white-space:nowrap;color:'+(share>0?'var(--good)':'var(--muted)')+'">'
+      + (share>0 ? fmt(share) : '\u2014')+'</b></label>';
+  });
+
+  if(c.totalDays > 0){
+    h += '<button class="btn" style="margin-top:12px;background:var(--good)" onclick="payProfitBonus()">'
+      + c.picked.length+' хүнд '+fmt(c.pool)+' олгох</button>';
+  } else {
+    h += '<div class="note" style="padding:8px 0 0">Ажилласан өдөртэй хүн сонгоно уу.</div>';
+  }
+  return h + '</div></div>';
+}
+
+function setCoPct(v){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.coPct = Math.max(0, Math.min(100, parseInt(v,10)||0));
+  save(); render();
+}
+
+function toggleLead(wid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const w = (j.workers||[]).find(x=>x.id===wid); if(!w) return;
+  if(w.lead){ delete w.lead; delete bonPick[wid]; } else w.lead = true;
+  save(); render();
+}
+
+function toggleDoneGrp(k){
+  if(openDone[k]) delete openDone[k]; else openDone[k] = 1;
+  render();
+}
+
+function toggleBonPick(wid){
+  if(bonPick[wid]) delete bonPick[wid]; else bonPick[wid] = 1;
+  render();
+}
+
+function payProfitBonus(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const c = bonusCalc(j, j.workers||[]);
+  if(!c.picked.length){ alert('Урамшуулал авах удирдагчаа тэмдэглэнэ үү.'); return; }
+  if(c.pool <= 0 || c.totalDays <= 0){ alert('Хуваарилах дүн алга.'); return; }
+  const dt = today();
+  j.bonuses = j.bonuses || [];
+  c.picked.forEach(w => {
+    const d = wkDays(j, w.id);
+    const amt = Math.round(c.pool * d / c.totalDays);
+    if(amt <= 0) return;
+    const eid = uid();
+    j.bonuses.push({id: uid(), workerId: w.id, amount: amt, note: 'Ашгийн урамшуулал',
+      date: dt, expenseId: eid});
+    j.expenses.push({id: eid, desc: 'Ашгийн урамшуулал \u2014 '+w.name+' ('+nd(d)+' өдөр)',
+      amount: amt, date: dt, cat: 'wage', asset: false});
+  });
+  bonPick = {}; save(); render();
 }
 
 function payBonus(wid){
