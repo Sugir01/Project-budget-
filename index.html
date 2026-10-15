@@ -1138,6 +1138,17 @@ function typeTag(j){
   return '<span class="tag" style="background:'+t.c+'22;color:'+t.c+'">'+t.t+'</span>';
 }
 
+function rosterJobs(r){
+  const out = [];
+  jobs.forEach(j => {
+    const w = (j.workers||[]).find(x => x.rid === r.id || x.name === r.name);
+    if(!w) return;
+    const d = wkDays(j, w.id), pd = wkPaidDays(j, w.id);
+    out.push({j:j, w:w, days:d, paid:pd, left:d-pd, due:Math.max(0,(d-pd)*w.rate)});
+  });
+  return out;
+}
+
 function rosterStats(r){
   let days = 0, paid = 0, njobs = 0, due = 0, bonus = 0, open = [];
   jobs.forEach(j => {
@@ -1205,11 +1216,18 @@ function rosterView(){
       + (st.bonus>0 ? ' · урамшуулал '+fmt(st.bonus) : '')
       + (st.open.length ? '<br>'+st.open.map(o=>esc(o.name)+': '+nd(o.days)+' өдөр ('+fmt(o.amt)+')').join('<br>') : '')
       + '</div>'
-      + '<div style="display:flex;gap:8px">'
+      + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
+      + (isAdmin() && st.due > 0
+          ? '<button class="small" style="border-color:#BBD4C4;color:var(--good)" '
+            + 'onclick="openRPay(\''+r.id+'\')">Цалин олгох · '+fmt(st.due)+'</button>' : '')
+      + (isAdmin() && rosterJobs(r).length
+          ? '<button class="small" onclick="openRBon(\''+r.id+'\')">Урамшуулал</button>' : '')
       + (isAdmin()
           ? '<button class="small" onclick="ui={rEdit:\''+r.id+'\'};render()">Засах</button>'
             + '<button class="small warn" onclick="ui={rDel:\''+r.id+'\'};render()">Устгах</button>'
           : '')+'</div>'
+      + (ui.rPay === r.id ? rPayBox(r) : '')
+      + (ui.rBon === r.id ? rBonBox(r) : '')
       + (ui.rDel === r.id
           ? confirmBox(esc(r.name)+' — жагсаалтаас устгах уу? Ажлууд дээрх бүртгэл хэвээр үлдэнэ.',
                        "delRoster('"+r.id+"')")
@@ -1223,6 +1241,118 @@ function rosterView(){
   if(ui.rAdd) h += wForm('ra', '', 0, 'Нэмэх', 'addRoster()');
   else h += '<button class="btn" style="margin-top:8px" onclick="ui={rAdd:1};render()">+ Ажилтан нэмэх</button>';
   return h;
+}
+
+function openRPay(rid){
+  const pick = {};
+  rosterJobs(roster.find(x=>x.id===rid)||{}).forEach(x => { if(x.due > 0) pick[x.j.id] = 1; });
+  ui = {rPay: rid, pick: pick};
+  render();
+}
+
+function openRBon(rid){
+  ui = {rBon: rid, pick: {}};
+  render();
+}
+
+function togglePick(jid){
+  ui.pick = ui.pick || {};
+  if(ui.pick[jid]) delete ui.pick[jid]; else ui.pick[jid] = 1;
+  render();
+}
+
+function rPayBox(r){
+  const list = rosterJobs(r).filter(x => x.due > 0);
+  if(!list.length) return '<div class="note" style="padding:8px 0 0">Олгох цалин алга.</div>';
+  const sel = list.filter(x => ui.pick && ui.pick[x.j.id]);
+  const tot = sel.reduce((s,x)=>s+x.due, 0);
+
+  let h = '<div class="inf" style="margin-top:10px">'
+    + '<div class="rdate" style="margin-bottom:6px">Аль ажлуудын цалинг олгохоо сонгоно уу. '
+    + 'Зардал нь сонгосон ажил бүр дээр тусад нь бүртгэгдэнэ.</div>';
+  list.forEach(x => {
+    const on = !!(ui.pick && ui.pick[x.j.id]);
+    h += '<label class="brow"><input type="checkbox"'+(on?' checked':'')
+      + ' onchange="togglePick(\''+x.j.id+'\')">'
+      + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(x.j.name)+'</span>'
+      + '<span class="rdate">'+nd(x.left)+' өдөр × '+fmt(x.w.rate)+'</span></span>'
+      + '<b style="white-space:nowrap">'+fmt(x.due)+'</b></label>';
+  });
+  h += '<input id="rpDate" type="date" value="'+today()+'" style="margin-top:10px">'
+    + '<div class="calc" style="margin:8px 0"><div class="ln tot"><span>Нийт олгох</span>'
+    + '<b class="pos">'+fmt(tot)+'</b></div></div>'
+    + '<div class="btns"><button class="btn"'+(tot>0?'':' disabled')
+    + ' onclick="payRosterWage(\''+r.id+'\')">Олгох</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  return h;
+}
+
+function rBonBox(r){
+  const list = rosterJobs(r);
+  if(!list.length) return '<div class="note" style="padding:8px 0 0">Ажил дээр бүртгэгдээгүй байна.</div>';
+  const sel = list.filter(x => ui.pick && ui.pick[x.j.id]);
+  const totDays = sel.reduce((s,x)=>s+x.days, 0);
+  const amt = num((document.getElementById('rbAmt')||{}).value || '') || 0;
+
+  let h = '<div class="inf" style="margin-top:10px">'
+    + '<div class="rdate" style="margin-bottom:6px">Урамшууллын нийт дүнг оруулаад, аль ажлуудад '
+    + 'хуваарилахаа сонгоно уу. Ажилласан өдрийн тоогоор хуваагдана.</div>'
+    + '<input id="rbAmt" inputmode="numeric" oninput="liveNum(this)" onchange="render()" '
+    + 'placeholder="Урамшууллын дүн (₮)" value="'+(amt?group(amt):'')+'">';
+  list.forEach(x => {
+    const on = !!(ui.pick && ui.pick[x.j.id]);
+    const share = (on && totDays && amt) ? Math.round(amt * x.days / totDays) : 0;
+    h += '<label class="brow"><input type="checkbox"'+(on?' checked':'')+(x.days>0?'':' disabled')
+      + ' onchange="togglePick(\''+x.j.id+'\')">'
+      + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(x.j.name)+'</span>'
+      + '<span class="rdate">'+nd(x.days)+' өдөр ажилласан</span></span>'
+      + '<b style="white-space:nowrap;color:'+(share>0?'var(--good)':'var(--muted)')+'">'
+      + (share>0 ? fmt(share) : '\u2014')+'</b></label>';
+  });
+  h += '<input id="rbNote" placeholder="Шалтгаан (сайн ажилласан, ашгийн урамшуулал…)" style="margin-top:10px">'
+    + '<input id="rbDate" type="date" value="'+today()+'">'
+    + '<div class="btns"><button class="btn"'+(amt>0 && totDays>0?'':' disabled')
+    + ' onclick="payRosterBonus(\''+r.id+'\')">Олгох</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  return h;
+}
+
+function payRosterWage(rid){
+  const r = roster.find(x=>x.id===rid); if(!r) return;
+  const dt = (document.getElementById('rpDate')||{}).value || today();
+  const list = rosterJobs(r).filter(x => x.due > 0 && ui.pick && ui.pick[x.j.id]);
+  if(!list.length){ alert('Ажил сонгоно уу.'); return; }
+  list.forEach(x => {
+    const eid = uid();
+    x.j.wagePays = x.j.wagePays || [];
+    x.j.wagePays.push({id: uid(), workerId: x.w.id, days: x.left, amount: x.due,
+      date: dt, expenseId: eid});
+    x.j.expenses.push({id: eid, desc: 'Цалин \u2014 '+x.w.name+' ('+nd(x.left)+' өдөр)',
+      amount: x.due, date: dt, cat: 'wage', asset: false});
+  });
+  save(); ui = {}; render();
+}
+
+function payRosterBonus(rid){
+  const r = roster.find(x=>x.id===rid); if(!r) return;
+  const amt = num((document.getElementById('rbAmt')||{}).value || '');
+  if(!(amt > 0)){ alert('Дүнг оруулна уу.'); return; }
+  const note = ((document.getElementById('rbNote')||{}).value || '').trim();
+  const dt = (document.getElementById('rbDate')||{}).value || today();
+  const list = rosterJobs(r).filter(x => x.days > 0 && ui.pick && ui.pick[x.j.id]);
+  if(!list.length){ alert('Ажил сонгоно уу.'); return; }
+  const totDays = list.reduce((s,x)=>s+x.days, 0);
+  list.forEach(x => {
+    const a = Math.round(amt * x.days / totDays);
+    if(a <= 0) return;
+    const eid = uid();
+    x.j.bonuses = x.j.bonuses || [];
+    x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: a, note: note || 'Урамшуулал',
+      date: dt, expenseId: eid});
+    x.j.expenses.push({id: eid, desc: 'Урамшуулал \u2014 '+x.w.name+(note?' ('+note+')':''),
+      amount: a, date: dt, cat: 'wage', asset: false});
+  });
+  save(); ui = {}; render();
 }
 
 function addRoster(){
