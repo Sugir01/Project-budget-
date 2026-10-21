@@ -1253,12 +1253,16 @@ function togglePick(jid){
   render();
 }
 
-function payAmtOf(x){
+// нэг ажлын олголтыг цалин ба урамшуулалд хуваана (эхлээд цалин)
+function payAlloc(x){
   const on = !!(ui.pick && ui.pick[x.j.id]);
-  if(!on || x.due <= 0) return 0;
-  const v = (ui.amt && ui.amt[x.j.id] !== undefined) ? num(ui.amt[x.j.id]) : x.due;
-  if(!(v > 0)) return 0;
-  return Math.min(v, x.due);
+  const max = x.due + x.bon;
+  if(!on || max <= 0) return {amt:0, wage:0, bon:0, max:max};
+  let v = (ui.amt && ui.amt[x.j.id] !== undefined) ? num(ui.amt[x.j.id]) : max;
+  if(!(v > 0)) v = 0;
+  const amt = Math.min(v, max);
+  const wage = Math.min(amt, x.due);
+  return {amt:amt, wage:wage, bon:amt - wage, max:max};
 }
 
 function setPayAmt(jid, el){
@@ -1270,36 +1274,37 @@ function setPayAmt(jid, el){
 function rPayBox(r){
   const list = rosterJobs(r).filter(x => x.due > 0 || x.bon > 0);
   if(!list.length) return '<div class="note" style="padding:8px 0 0">Олгох дүн алга.</div>';
-  const sel = list.filter(x => ui.pick && ui.pick[x.j.id]);
-  const tW = sel.reduce((s,x)=>s+payAmtOf(x), 0);
-  const tB = sel.reduce((s,x)=>s+x.bon, 0);
+  let tW = 0, tB = 0;
+  list.forEach(x => { const a = payAlloc(x); tW += a.wage; tB += a.bon; });
 
   let h = '<div class="inf" style="margin-top:10px">'
-    + '<div class="rdate" style="margin-bottom:6px">Аль ажлуудын цалин, урамшууллыг олгохоо '
-    + 'сонгоно уу. Цалинг хэсэгчлэн олгох бол дүнг нь засаарай. Зардал нь сонгосон ажил бүр '
-    + 'дээр тусад нь бүртгэгдэнэ.</div>';
+    + '<div class="rdate" style="margin-bottom:6px">Ажлаа сонгоод олгох дүнгээ бичнэ үү. '
+    + 'Дүн нь эхлээд цалинд, үлдсэн нь ашгийн урамшуулалд хуваарилагдана.</div>';
   list.forEach(x => {
     const on = !!(ui.pick && ui.pick[x.j.id]);
-    const amt = payAmtOf(x);
-    const raw = (ui.amt && ui.amt[x.j.id] !== undefined) ? ui.amt[x.j.id] : (x.due>0 ? group(x.due) : '');
+    const a = payAlloc(x);
+    const raw = (ui.amt && ui.amt[x.j.id] !== undefined) ? ui.amt[x.j.id] : group(a.max);
     h += '<div style="padding:9px 0;border-bottom:1px solid #EFF2EE">'
       + '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">'
-      + '<input type="checkbox"'+(on?' checked':'')+' style="width:21px;height:21px;accent-color:var(--good);flex:none;margin:0"'
+      + '<input type="checkbox"'+(on?' checked':'')
+      + ' style="width:21px;height:21px;accent-color:var(--good);flex:none;margin:0"'
       + ' onchange="togglePick(\''+x.j.id+'\')">'
       + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(x.j.name)+'</span>'
       + '<span class="rdate">'
-      + (x.due > 0 ? 'олгоогүй цалин '+fmt(x.due)+' ('+nd(x.left)+' өдөр × '+fmt(x.w.rate)+')' : '')
+      + (x.due > 0 ? 'цалин '+fmt(x.due)+' ('+nd(x.left)+' өдөр × '+fmt(x.w.rate)+')' : '')
       + (x.due > 0 && x.bon > 0 ? '<br>' : '')
       + (x.bon > 0 ? 'ашгийн урамшуулал '+fmt(x.bon) : '')+'</span></span>'
-      + '<b style="white-space:nowrap">'+fmt(amt + (on?x.bon:0))+'</b></label>';
-    if(on && x.due > 0){
+      + '<b style="white-space:nowrap">'+fmt(a.amt)+'</b></label>';
+    if(on){
       h += '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0 31px">'
         + '<input inputmode="numeric" oninput="liveNum(this)" onchange="setPayAmt(\''+x.j.id+'\',this)" '
         + 'value="'+raw+'" style="flex:1;padding:8px 10px;font-size:15px">'
-        + '<button class="small" onclick="setPayAmt(\''+x.j.id+'\',{value:\''+x.due+'\'})">Бүгд</button></div>'
-        + (amt < x.due
-            ? '<div class="rdate" style="margin:5px 0 0 31px">Хэсэгчлэн: '+nd(Math.round(amt/x.w.rate*100)/100)
-              + ' өдрийн цалин · үлдэх '+fmt(x.due - amt)+'</div>' : '');
+        + '<button class="small" onclick="setPayAmt(\''+x.j.id+'\',{value:\''+a.max+'\'})">Бүгд</button></div>'
+        + '<div class="rdate" style="margin:5px 0 0 31px">'
+        + 'Цалин '+fmt(a.wage)
+        + (x.w.rate > 0 && a.wage > 0 ? ' ('+nd(Math.round(a.wage/x.w.rate*100)/100)+' өдөр)' : '')
+        + ' · урамшуулал '+fmt(a.bon)
+        + (a.amt < a.max ? ' · үлдэх '+fmt(a.max - a.amt) : '')+'</div>';
     }
     h += '</div>';
   });
@@ -1352,25 +1357,26 @@ function payRosterWage(rid){
   if(!list.length){ alert('Ажил сонгоно уу.'); return; }
   let any = false;
   list.forEach(x => {
-    const amt = payAmtOf(x);
-    if(amt > 0){
+    const a = payAlloc(x);
+    if(a.wage > 0){
       any = true;
-      const days = x.w.rate > 0 ? Math.round(amt / x.w.rate * 100) / 100 : x.left;
+      const days = x.w.rate > 0 ? Math.round(a.wage / x.w.rate * 100) / 100 : x.left;
       const eid = uid();
       x.j.wagePays = x.j.wagePays || [];
-      x.j.wagePays.push({id: uid(), workerId: x.w.id, days: days, amount: amt,
+      x.j.wagePays.push({id: uid(), workerId: x.w.id, days: days, amount: a.wage,
         date: dt, expenseId: eid});
       x.j.expenses.push({id: eid, desc: 'Цалин \u2014 '+x.w.name+' ('+nd(days)+' өдөр)',
-        amount: amt, date: dt, cat: 'wage', asset: false});
+        amount: a.wage, date: dt, cat: 'wage', asset: false});
     }
-    if(x.bon > 0){
+    if(a.bon > 0){
       any = true;
       const bid = uid();
       x.j.bonuses = x.j.bonuses || [];
-      x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: x.bon, note: 'Ашгийн урамшуулал',
-        kind: 'profit', date: dt, expenseId: bid});
+      x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: a.bon, note: 'Ашгийн урамшуулал',
+        kind: 'profit', rest: Math.max(0, Math.round(x.bon - a.bon)),
+        date: dt, expenseId: bid});
       x.j.expenses.push({id: bid, desc: 'Ашгийн урамшуулал \u2014 '+x.w.name
-        + ' ('+nd(x.days)+' өдөр)', amount: x.bon, date: dt, cat: 'wage', asset: false});
+        + ' ('+nd(x.days)+' өдөр)', amount: a.bon, date: dt, cat: 'wage', asset: false});
     }
   });
   if(!any){ alert('Олгох дүнг оруулна уу.'); return; }
@@ -1947,6 +1953,13 @@ function payWage(wid){
 
 const gotProfitBonus = (j,wid) => (j.bonuses||[]).some(b => b.workerId===wid && b.kind==='profit');
 
+// тухайн удирдагчид өмнө нь олгосон ашгийн урамшууллын сүүлчийн бичилт
+function lastProfit(j, wid){
+  const a = (j.bonuses||[]).filter(b => b.workerId===wid && b.kind==='profit');
+  return a.length ? a[a.length-1] : null;
+}
+const leadRest = (j,wid) => { const p = lastProfit(j,wid); return p ? Math.max(0, p.rest||0) : 0; };
+
 function bonusCalc(j, Wall){
   const leads = (Wall || j.workers || []).filter(w => w.lead);
   const pct = j.coPct || 0;
@@ -1954,18 +1967,23 @@ function bonusCalc(j, Wall){
   const gross = j.contract - cost;
   const coShare = j.contract * pct / 100;
   const pool = gross - coShare;
-  const paidL = leads.filter(w => gotProfitBonus(j, w.id));
-  const picked = leads.filter(w => !gotProfitBonus(j, w.id) && wkDays(j, w.id) > 0);
-  const totalDays = picked.reduce((t,w)=>t+wkDays(j,w.id), 0);
-  return {pct, cost, gross, coShare, pool, leads, paidL, picked, totalDays};
+  // хэсэгчлэн олгосон хүмүүсийн үлдэгдэл нь амлалт тул санд хуваагдахгүй
+  const committed = leads.reduce((t,w)=>t + leadRest(j, w.id), 0);
+  const fresh = leads.filter(w => !lastProfit(j, w.id) && wkDays(j, w.id) > 0);
+  const totalDays = fresh.reduce((t,w)=>t+wkDays(j,w.id), 0);
+  const freshPool = pool - committed;
+  const paidL = leads.filter(w => lastProfit(j, w.id) && leadRest(j, w.id) <= 0);
+  const picked = fresh.slice();
+  return {pct, cost, gross, coShare, pool, committed, freshPool, leads, paidL, picked, totalDays};
 }
 
 // нэг удирдагчид ногдох ашгийн урамшуулал
 function leadShare(j, wid){
+  if(lastProfit(j, wid)) return leadRest(j, wid);
   const c = bonusCalc(j, j.workers||[]);
-  if(c.pool <= 0 || c.totalDays <= 0) return 0;
+  if(c.freshPool <= 0 || c.totalDays <= 0) return 0;
   if(!c.picked.some(w => w.id === wid)) return 0;
-  return Math.round(c.pool * wkDays(j, wid) / c.totalDays);
+  return Math.round(c.freshPool * wkDays(j, wid) / c.totalDays);
 }
 
 function bonusBox(j, W){
@@ -1997,6 +2015,10 @@ function bonusBox(j, W){
     return h + '<div class="warn" style="margin:0">Хуваарилах ашиг алга. Компанийн ашгийн хувийг '
       + 'бууруулах, эсвэл зардлаа хянах хэрэгтэй.</div></div></div>';
   }
+  if(c.committed > 0){
+    h += '<div class="rdate" style="margin:-4px 0 6px">Үүнээс '+fmt(c.committed)
+      + ' нь хэсэгчлэн олгосон удирдагчдын үлдэгдэл.</div>';
+  }
   if(c.leads.length === 0){
     return h + '<div class="note" style="padding:0">Удирдагч тэмдэглээгүй байна. Дээрх "Ажилчид" '
       + 'хэсгээс хүн бүр дээр "Удирдагч болгох" дарж тэмдэглэнэ үү.</div></div></div>';
@@ -2007,8 +2029,8 @@ function bonusBox(j, W){
 
   c.leads.forEach(w => {
     const d = wkDays(j, w.id);
-    const done = gotProfitBonus(j, w.id);
-    const share = done ? 0 : leadShare(j, w.id);
+    const share = leadShare(j, w.id);
+    const done = !!lastProfit(j, w.id) && share <= 0;
     h += '<div class="brow">'
       + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(w.name)+'</span>'
       + '<span class="rdate">'+nd(d)+' өдөр'
