@@ -752,12 +752,22 @@ function progressCard(j){
 function catCard(j){
   if(j.expenses.length === 0) return '';
   const tot = spent(j);
-  const rows = CATS.map(c => ({c, v: j.expenses.filter(e=>catOf(e.cat).k===c.k).reduce((s,e)=>s+e.amount,0)}))
-    .filter(r=>r.v>0).sort((a,b)=>b.v-a.v);
+  // урамшууллыг цалингаас тусгаарлана
+  const bonIds = {};
+  (j.bonuses||[]).forEach(b => { if(b.expenseId) bonIds[b.expenseId] = 1; });
+  const rows = CATS.map(c => ({
+    c: c,
+    v: j.expenses.filter(e => catOf(e.cat).k === c.k && !(c.k === 'wage' && bonIds[e.id]))
+        .reduce((s,e)=>s+e.amount, 0)
+  }));
+  const bonV = j.expenses.filter(e => bonIds[e.id]).reduce((s,e)=>s+e.amount, 0);
+  if(bonV > 0) rows.push({c: {k:'bonus', t:'Урамшуулал', c:'#8A6A1F'}, v: bonV});
+  rows.sort((a,b)=>b.v-a.v);
+  const shown = rows.filter(r=>r.v>0);
   // donut
   const R = 46, C = 2*Math.PI*R;
   let off = 0, arcs = '';
-  rows.forEach(r => {
+  shown.forEach(r => {
     const len = r.v / tot * C;
     arcs += '<circle r="'+R+'" cx="60" cy="60" fill="none" stroke="'+r.c.c+'" stroke-width="18" '
       + 'stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'" transform="rotate(-90 60 60)"></circle>';
@@ -766,12 +776,12 @@ function catCard(j){
   let h = '<div class="card" style="margin-bottom:18px"><div style="font-weight:600;margin-bottom:10px">Зардлын бүтэц</div>'
     + '<div style="display:flex;gap:14px;align-items:center">'
     + '<svg width="120" height="120" viewBox="0 0 120 120" style="flex:none">'+arcs+'</svg><div style="flex:1;min-width:0">';
-  rows.forEach(r => {
+  shown.forEach(r => {
     h += '<div class="catrow"><i style="background:'+r.c.c+'"></i><span class="cn">'+r.c.t+'</span>'
       + '<span class="cp">'+Math.round(r.v/tot*100)+'%</span></div>';
   });
   h += '</div></div><div style="margin-top:10px;border-top:1px solid var(--line);padding-top:6px">';
-  rows.forEach(r => {
+  shown.forEach(r => {
     h += '<div class="catrow"><i style="background:'+r.c.c+'"></i><span class="cn">'+r.c.t+'</span>'
       + '<span class="ca">'+fmt(r.v)+'</span></div>';
   });
