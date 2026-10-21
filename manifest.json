@@ -1,6 +1,6 @@
 {
-  "name": "Ажлын зардал",
-  "short_name": "Зардал",
+  "name": "Смарт Солгрид ХХК",
+  "short_name": "Смарт Солгрид",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
