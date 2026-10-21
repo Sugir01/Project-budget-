@@ -1198,7 +1198,7 @@ function detailView(j){
             + 'onchange="setCat(\''+it.id+'\',this.value)">'
             + CATS.map(c=>'<option value="'+c.k+'"'+(catOf(it.cat).k===c.k?' selected':'')+'>'+c.t+'</option>').join('')
             + '</select>' : '')
-        + '<div class="rdate">'+it.date+'</div></div>'
+        + '<div class="rdate">'+it.date+(it.by ? ' · '+esc(shortBy(it.by)) : '')+'</div></div>'
         + '<div style="display:flex;align-items:center;gap:8px">'
         + '<span class="ramt">'+(tab==='exp'?'−':'+')+fmt(it.amount)+'</span>'
         + '<button class="x" onclick="delEntry(\''+it.id+'\')">×</button></div></div>';
@@ -1931,6 +1931,15 @@ function addJob(){
   newJob=false; save(); render();
 }
 
+// имэйлийг богиносгож харуулна (олон хүн нэг домэйнтэй тул @-с өмнөх хэсэг)
+function shortBy(em){
+  const e = String(em || '');
+  if(!e) return '';
+  if(me && e === me) return 'би';
+  const i = e.indexOf('@');
+  return i > 0 ? e.slice(0, i) : e;
+}
+
 function addEntry(){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const a = num(document.getElementById('eAmt').value);
@@ -1942,7 +1951,8 @@ function addEntry(){
     amount: a,
     date: document.getElementById('eDate').value || today(),
     asset: tab==='exp' && chk && chk.checked,
-    cat: tab==='exp' ? selCat : ''
+    cat: tab==='exp' ? selCat : '',
+    by: me || ''
   };
   (tab==='exp'? j.expenses : j.incomes).push(entry);
   save(); render();
