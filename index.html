@@ -380,14 +380,27 @@ function subscribe(){
   );
 }
 
+const AKEY = 'auth-save';
+function savedAuth(){
+  try{ return JSON.parse(localStorage.getItem(AKEY) || '{}') || {}; }catch(e){ return {}; }
+}
+function storeAuth(em, pw, keep){
+  try{
+    if(keep) localStorage.setItem(AKEY, JSON.stringify({email: em, pass: pw}));
+    else localStorage.removeItem(AKEY);
+  }catch(e){}
+}
+
 function doLogin(signup){
   const F = window.FB;
   const em = document.getElementById('authEmail').value.trim().toLowerCase();
   const pw = document.getElementById('authPass').value;
   if(!em || pw.length < 6){ ui.authErr = 'Имэйл болон 6-аас дээш тэмдэгт бүхий нууц үг оруулна уу.'; render(); return; }
   ui.authErr = ''; ui.authOk = ''; ui.authBusy = 1; render();
+  const keepEl = document.getElementById('authKeep');
+  const keep = keepEl ? keepEl.checked : true;
   const fn = signup ? F.createUserWithEmailAndPassword : F.signInWithEmailAndPassword;
-  fn(F.auth, em, pw).catch(e => {
+  fn(F.auth, em, pw).then(() => storeAuth(em, pw, keep)).catch(e => {
     const m = {
       'auth/invalid-credential':'Имэйл эсвэл нууц үг буруу байна.',
       'auth/wrong-password':'Нууц үг буруу байна.',
@@ -427,25 +440,34 @@ function resetPass(){
 }
 
 function logout(){
+  try{ localStorage.removeItem(AKEY); }catch(e){}
   if(window.FB) window.FB.signOut(window.FB.auth);
 }
 
 function authView(){
+  const sv = savedAuth();
+  const em = ui.lastEmail || sv.email || '';
+  const pw = sv.pass || '';
+  const keep = sv.email ? true : (ui.keep !== false);
   return '<div style="padding:40px 0 0"><div style="text-align:center;margin-bottom:26px">'
     + '<img src="icon-192.png" alt="" style="width:76px;height:76px;margin-bottom:10px">'
     + '<div style="font-size:22px;font-weight:700">Смарт Солгрид ХХК</div>'
     + '<div style="color:var(--muted);font-size:14px;margin-top:5px">Имэйлээрээ нэвтэрч ажлаа үргэлжлүүлнэ</div></div>'
-    + '<div class="card">'
-    + '<input id="authEmail" type="email" inputmode="email" placeholder="Имэйл" style="margin-bottom:9px" value="'+esc(ui.lastEmail||'')+'">'
-    + '<input id="authPass" type="password" placeholder="Нууц үг" style="margin-bottom:12px">'
+    + '<form class="card" onsubmit="doLogin(false);return false">'
+    + '<input id="authEmail" name="username" type="email" inputmode="email" autocomplete="username" '
+    + 'placeholder="Имэйл" style="margin-bottom:9px" value="'+esc(em)+'">'
+    + '<input id="authPass" name="password" type="password" autocomplete="current-password" '
+    + 'placeholder="Нууц үг" style="margin-bottom:10px" value="'+esc(pw)+'">'
+    + '<label class="check" style="margin:0 0 12px"><input type="checkbox" id="authKeep"'
+    + (keep?' checked':'')+'>Нэр, нууц үгийг сануулах</label>'
     + (ui.authErr ? '<div class="warn" style="margin:0 0 12px">'+esc(ui.authErr)+'</div>' : '')
-    + '<button class="btn" style="margin-bottom:8px" onclick="doLogin(false)">'
+    + '<button type="submit" class="btn" style="margin-bottom:8px">'
     + (ui.authBusy ? 'Түр хүлээнэ үү…' : 'Нэвтрэх')+'</button>'
-    + '<button class="btn ghost" style="width:100%" onclick="doLogin(true)">Шинээр бүртгүүлэх</button>'
+    + '<button type="button" class="btn ghost" style="width:100%" onclick="doLogin(true)">Шинээр бүртгүүлэх</button>'
     + (ui.authOk ? '<div class="okmsg" style="margin-top:12px">'+esc(ui.authOk)+'</div>' : '')
     + '<div style="text-align:center;margin-top:14px">'
-    + '<button class="small" style="border:none" onclick="resetPass()">Нууц үгээ мартсан уу?</button></div>'
-    + '</div>'
+    + '<button type="button" class="small" style="border:none" onclick="resetPass()">Нууц үгээ мартсан уу?</button></div>'
+    + '</form>'
     + '<div class="note" style="margin-top:14px;text-align:center">Анх удаа бол "Шинээр бүртгүүлэх" дарна уу.</div></div>';
 }
 
