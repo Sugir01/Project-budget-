@@ -1226,6 +1226,52 @@ function rosterJobs(r){
   return out;
 }
 
+function togglePaid(rid){
+  ui = (ui.rHist === rid) ? {} : {rHist: rid};
+  render();
+}
+
+function paidHistBox(r){
+  const rows = [];
+  jobs.forEach(j => {
+    const w = (j.workers||[]).find(x => x.rid === r.id || x.name === r.name);
+    if(!w) return;
+    const wage = (j.wagePays||[]).filter(p=>p.workerId===w.id);
+    const bons = (j.bonuses||[]).filter(b=>b.workerId===w.id);
+    const wa = wage.reduce((s,p)=>s+p.amount, 0);
+    const ba = bons.reduce((s,b)=>s+b.amount, 0);
+    if(wa <= 0 && ba <= 0) return;
+    const dates = wage.concat(bons).map(x=>x.date).filter(Boolean).sort();
+    rows.push({name: j.name, wa: wa, ba: ba,
+      days: wage.reduce((s,p)=>s+(p.days||0), 0),
+      last: dates.length ? dates[dates.length-1] : ''});
+  });
+  if(!rows.length){
+    return '<div class="note" style="padding:0 0 10px">Олголт хийгдээгүй байна.</div>';
+  }
+  rows.sort((a,b)=>(b.wa+b.ba)-(a.wa+a.ba));
+  const tW = rows.reduce((s,x)=>s+x.wa, 0), tB = rows.reduce((s,x)=>s+x.ba, 0);
+
+  let h = '<div class="inf" style="margin:0 0 10px">'
+    + '<div class="rdate" style="margin-bottom:6px">Ажил тус бүрээр олгосон дүн</div>';
+  rows.forEach(x => {
+    h += '<div style="padding:8px 0;border-bottom:1px solid #EFF2EE">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+      + '<span style="font-size:14.5px;font-weight:500">'+esc(x.name)+'</span>'
+      + '<b style="white-space:nowrap">'+fmt(x.wa + x.ba)+'</b></div>'
+      + '<div class="rdate">'
+      + (x.wa > 0 ? 'цалин '+fmt(x.wa)+(x.days>0?' ('+nd(x.days)+' өдөр)':'') : '')
+      + (x.wa > 0 && x.ba > 0 ? ' · ' : '')
+      + (x.ba > 0 ? 'урамшуулал '+fmt(x.ba) : '')
+      + (x.last ? ' · сүүлд '+x.last : '')+'</div></div>';
+  });
+  h += '<div class="calc" style="margin:8px 0 0">'
+    + (tW > 0 ? '<div class="ln"><span>Нийт цалин</span><b>'+fmt(tW)+'</b></div>' : '')
+    + (tB > 0 ? '<div class="ln"><span>Нийт урамшуулал</span><b>'+fmt(tB)+'</b></div>' : '')
+    + '<div class="ln tot"><span>Нийт авсан</span><b>'+fmt(tW + tB)+'</b></div></div></div>';
+  return h;
+}
+
 function rosterStats(r){
   let days = 0, paid = 0, njobs = 0, due = 0, bonus = 0, bonDue = 0, open = [], lead = false;
   jobs.forEach(j => {
@@ -1293,8 +1339,11 @@ function rosterView(){
       + '<div class="pairs" style="margin:9px 0 10px">'
       + '<div class="pair"><div class="plabel">Авах цалин</div><div class="pval '
       + (st.due>0?'neg':'pos')+'">'+fmt(st.due)+'</div></div>'
-      + '<div class="pair"><div class="plabel">Авсан цалин</div><div class="pval" style="color:var(--ink)">'
-      + fmt(st.paid)+'</div></div></div>'
+      + '<div class="pair" style="cursor:pointer" onclick="togglePaid(\''+r.id+'\')">'
+      + '<div class="plabel">Авсан цалин <span class="arw'+(ui.rHist===r.id?' op':'')
+      + '" style="font-size:12px">\u203A</span></div>'
+      + '<div class="pval" style="color:var(--ink)">'+fmt(st.paid)+'</div></div></div>'
+      + (ui.rHist === r.id ? paidHistBox(r) : '')
       + (st.bonDue > 0
           ? '<div class="total" style="background:#E7EFE9;padding:10px 12px;margin:0 0 10px">'
             + '<span style="font-size:13.5px">Ашгийн урамшуулал</span>'
