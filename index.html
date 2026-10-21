@@ -1851,9 +1851,22 @@ function memberBox(j){
   });
   if(owner){
     if(ui.mAdd){
+      const avail = knownEmails().filter(x => ms.indexOf(x) < 0);
       h += '<div class="inf" style="margin-top:8px">'
-        + '<input id="memEmail" type="email" inputmode="email" placeholder="Инженерийн имэйл">'
-        + '<div class="btns"><button class="btn" onclick="addMember()">Нэмэх</button>'
+        + '<input id="memEmail" type="email" inputmode="email" list="memList" '
+        + 'placeholder="Инженерийн имэйл" value="'+esc(ui.memPick||'')+'">'
+        + '<datalist id="memList">'+avail.map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist>';
+      if(avail.length){
+        h += '<div class="rdate" style="margin:2px 0 6px">Өмнө нэмэгдэж байсан хүмүүс:</div>'
+          + '<div style="margin-bottom:8px">'
+          + avail.map(x => '<div style="display:flex;justify-content:space-between;align-items:center;'
+              + 'gap:10px;padding:8px 0;border-bottom:1px solid #EFF2EE">'
+              + '<span style="font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+              + esc(x)+'</span>'
+              + '<button class="small" onclick="addMemberDirect(\''+esc(x)+'\')">Нэмэх</button></div>').join('')
+          + '</div>';
+      }
+      h += '<div class="btns"><button class="btn" onclick="addMember()">Нэмэх</button>'
         + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
     } else {
       h += '<button class="small" style="margin-top:8px" onclick="ui={mAdd:1};render()">+ Хүн нэмэх</button>';
@@ -1862,6 +1875,22 @@ function memberBox(j){
       + 'зардал, ирц оруулна. Тухайн хүн эхлээд аппд ижил имэйлээр бүртгүүлсэн байх ёстой.</div>';
   }
   return h + '</div></div>';
+}
+
+// өмнө нь ямар нэг ажилд нэмэгдэж байсан бүх имэйл
+function knownEmails(){
+  const set = {};
+  if(admin) set[admin] = 1;
+  if(me) set[me] = 1;
+  jobs.forEach(j => (j.members||[]).forEach(m => { if(m) set[String(m).toLowerCase()] = 1; }));
+  return Object.keys(set).sort();
+}
+
+function addMemberDirect(em){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.members = j.members || [];
+  if(j.members.indexOf(em) < 0) j.members.push(em);
+  save(); ui = {mAdd:1}; render();
 }
 
 function addMember(){
