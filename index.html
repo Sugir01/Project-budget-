@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-mask-192.png">
 <link rel="icon" href="icon-192.png">
-<title>Ажлын зардал</title>
+<title>Смарт Солгрид ХХК</title>
 <style>
 :root{
   --bg:#E9ECE8; --surface:#fff; --ink:#1B2A33; --muted:#6C7A80;
@@ -432,7 +432,8 @@ function logout(){
 
 function authView(){
   return '<div style="padding:40px 0 0"><div style="text-align:center;margin-bottom:26px">'
-    + '<div style="font-size:22px;font-weight:700">Ажлын зардал</div>'
+    + '<img src="icon-192.png" alt="" style="width:76px;height:76px;margin-bottom:10px">'
+    + '<div style="font-size:22px;font-weight:700">Смарт Солгрид ХХК</div>'
     + '<div style="color:var(--muted);font-size:14px;margin-top:5px">Имэйлээрээ нэвтэрч ажлаа үргэлжлүүлнэ</div></div>'
     + '<div class="card">'
     + '<input id="authEmail" type="email" inputmode="email" placeholder="Имэйл" style="margin-bottom:9px" value="'+esc(ui.lastEmail||'')+'">'
