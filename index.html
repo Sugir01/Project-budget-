@@ -574,7 +574,7 @@ function render(){
   let html;
   if(job) html = detailView(job);
   else if(view === 'assets' && isAdmin()) html = assetsView();
-  else if(view === 'done' && isAdmin()) html = doneView();
+  else if(view === 'done') html = doneView();
   else if(view === 'types' && isAdmin()) html = typesView();
   else if(view === 'roster') html = rosterView();
   else html = listView();
@@ -638,13 +638,14 @@ function listView(){
   if(isAdmin()){
     h += '<button class="navbtn" onclick="view=\'types\';render()">'
       + '<span>Ажлын төрлөөр</span><span style="color:var(--muted)">Угсралт / Зураг төсөл ›</span></button>';
-
-    if(done.length>0){
-      const dp = done.reduce((s,j)=>s+(j.contract-spent(j)),0);
-      h += '<button class="navbtn" onclick="view=\'done\';render()">'
-        + '<span>Дууссан ажил ('+done.length+')</span>'
-        + '<span class="'+(dp<0?'neg':'pos')+'">'+fmt(dp)+' ›</span></button>';
-    }
+  }
+  if(done.length > 0){
+    const dp = done.reduce((s,j)=>s+(j.contract-spent(j)),0);
+    h += '<button class="navbtn" onclick="view=\'done\';render()">'
+      + '<span>Дууссан ажил ('+done.length+')</span>'
+      + (isAdmin()
+          ? '<span class="'+(dp<0?'neg':'pos')+'">'+fmt(dp)+' ›</span>'
+          : '<span style="color:var(--muted)">›</span>')+'</button>';
   }
 
   if(newJob){
@@ -1646,6 +1647,21 @@ function setType(k){
 
 function doneView(){
   const done = jobs.filter(j=>j.done);
+
+  if(!isAdmin()){
+    let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>'
+      + '<div class="secttl" style="margin:0 0 10px">Дууссан ажил</div>';
+    if(done.length === 0) return h + '<div class="empty">Дууссан ажил алга.</div>';
+    done.slice().sort((a,b)=>(b.doneDate||'')<(a.doneDate||'')?-1:1).forEach(j => {
+      h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
+        + '<div class="jname">'+esc(j.name)+typeTag(j)+'</div>'
+        + '<div class="sub" style="margin-top:8px">Дууссан '+(j.doneDate||'—')
+        + ' · Гэрээ '+fmt(j.contract)+' · Зардал '+fmt(spent(j))
+        + (manDays(j)>0 ? ' · '+nd(manDays(j))+' хүн өдөр' : '')+'</div></button>';
+    });
+    return h;
+  }
+
   const dC = done.reduce((s,j)=>s+j.contract,0);
   const dS = done.reduce((s,j)=>s+spent(j),0);
   const dE = done.reduce((s,j)=>s+earned(j),0);
