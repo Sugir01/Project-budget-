@@ -168,8 +168,15 @@ textarea{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--l
 .catrow .ca{font-weight:600;white-space:nowrap}
 .prog{margin:10px 0 4px}
 .prog .pl{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:4px}
-.prog .pb{height:7px;background:var(--track);border-radius:4px;overflow:hidden}
-.prog .pb i{display:block;height:100%;border-radius:4px}
+.prog .pb{height:9px;background:var(--track);border-radius:5px;position:relative;display:flex;overflow:hidden}
+.prog .pb i{display:block;height:100%}
+.prog .pb i:first-child{border-radius:5px 0 0 5px}
+.prog .pb .mk{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);
+  border-radius:1px;z-index:2;transform:translateX(-1px)}
+.prog .pb .mk::after{content:'';position:absolute;top:-3px;left:-2px;width:6px;height:6px;
+  border-radius:50%;background:var(--ink)}
+.plgd{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:5px}
+.plgd i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 .warn{background:#FBE9E6;color:var(--bad);border-radius:8px;padding:9px 11px;font-size:13.5px;margin-top:12px;line-height:1.4}
 .okmsg{background:#E6F0EA;color:var(--good);border-radius:8px;padding:9px 11px;font-size:13.5px;margin-top:12px;line-height:1.4}
 .fc{font-size:13.5px;margin-top:10px;line-height:1.5}
@@ -270,7 +277,7 @@ function clean(v){
 }
 
 const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses','plan'];
-const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct'];
+const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct','startDate','endDate'];
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
 const isAdmin = () => !!me && me === admin;
@@ -484,6 +491,18 @@ const taskPct = t => t.done ? 100 : (t.pct||0);
 const earnedDays = j => (j.plan||[]).reduce((s,t)=>s+(t.days||0)*taskPct(t)/100, 0);
 const hasPlan = j => (j.plan||[]).length > 0 && planDays(j) > 0;
 const jobProgress = j => hasPlan(j) ? earnedDays(j)/planDays(j)*100 : (j.progress||0);
+const dnum = d => d ? Date.parse(d+'T00:00:00Z') : 0;
+function timePct(j){
+  const a = dnum(j.startDate), b = dnum(j.endDate);
+  if(!a || !b || b <= a) return null;
+  const n = dnum(today());
+  return Math.max(0, Math.min(100, (n - a) / (b - a) * 100));
+}
+function daysLeft(j){
+  const b = dnum(j.endDate);
+  if(!b) return null;
+  return Math.round((b - dnum(today())) / 86400000);
+}
 const dayShare = (j,wid,dt) => {
   const n = (j.labor||[]).filter(e=>e.workerId===wid && e.date===dt).length;
   return n ? 1/n : 0;
@@ -608,7 +627,11 @@ function listView(){
   if(newJob){
     h += '<div class="card">'
       + '<input id="nName" placeholder="Ажлын нэр" style="margin-bottom:10px">'
-      + '<input id="nContract" placeholder="Гэрээний дүн (₮)" inputmode="numeric" oninput="liveNum(this)" style="margin-bottom:12px">'
+      + '<input id="nContract" placeholder="Гэрээний дүн (₮)" inputmode="numeric" oninput="liveNum(this)" style="margin-bottom:10px">'
+      + '<div class="mlabel" style="margin-bottom:5px">Төслийн хугацаа</div>'
+      + '<div style="display:flex;gap:8px;margin-bottom:12px">'
+      + '<input id="nStart" type="date" value="'+today()+'">'
+      + '<input id="nEnd" type="date"></div>'
       + '<div class="chips">' + TYPES.map(t =>
           '<button class="chip'+(t.k===newType?' on':'')+'" onclick="pickType(this,\''+t.k+'\')">'+t.t+'</button>'
         ).join('') + '</div>'
@@ -654,10 +677,35 @@ function listView(){
 
 function progBars(j){
   const pr = jobProgress(j), sp = spentPct(j);
-  return '<div class="prog"><div class="pl"><span>Гүйцэтгэл</span><span>'+Math.round(pr)+'%</span></div>'
-    + '<div class="pb"><i style="width:'+Math.min(pr,100)+'%;background:var(--blue)"></i></div></div>'
-    + '<div class="prog" style="margin-bottom:10px"><div class="pl"><span>Төсвийн зарцуулалт</span><span>'+Math.round(sp)+'%</span></div>'
-    + '<div class="pb"><i style="width:'+Math.min(sp,100)+'%;background:'+(sp-pr>=10||sp>100?'var(--bad)':'var(--good)')+'"></i></div></div>';
+  const bn = j.contract ? bonusTotal(j) / j.contract * 100 : 0;
+  const base = Math.max(0, sp - bn);
+  const bcol = (sp - pr >= 10 || sp > 100) ? 'var(--bad)' : 'var(--good)';
+  const tp = timePct(j);
+  const mk = tp === null ? '' : '<span class="mk" style="left:'+tp+'%"></span>';
+
+  let h = '<div class="prog"><div class="pl"><span>Гүйцэтгэл</span><span>'+Math.round(pr)+'%</span></div>'
+    + '<div class="pb">'+mk+'<i style="width:'+Math.min(pr,100)+'%;background:var(--blue)"></i></div></div>'
+    + '<div class="prog"><div class="pl"><span>Төсвийн зарцуулалт</span><span>'
+    + Math.round(base)+'%'+(bn > 0 ? ' + '+Math.round(bn)+'%' : '')+'</span></div>'
+    + '<div class="pb">'+mk
+    + '<i style="width:'+Math.min(base,100)+'%;background:'+bcol+'"></i>'
+    + (bn > 0 ? '<i style="width:'+Math.min(bn, Math.max(0,100-base))+'%;background:var(--asset)"></i>' : '')
+    + '</div>';
+  if(bn > 0){
+    h += '<div class="plgd"><span><i style="background:'+bcol+'"></i>Зардал '+Math.round(base)+'%</span>'
+      + '<span><i style="background:var(--asset)"></i>Урамшуулал '+Math.round(bn)+'%</span></div>';
+  }
+  h += '</div>';
+  if(tp !== null){
+    const dl = daysLeft(j);
+    h += '<div class="plgd" style="margin:0 0 10px"><span>| Хугацаа '+Math.round(tp)+'%'
+      + (dl !== null ? (dl >= 0 ? ' · '+dl+' хоног үлдсэн' : ' · '+(-dl)+' хоног хоцорсон') : '')
+      + (pr - tp <= -10 ? ' · <b style="color:var(--bad)">хоцорч байна</b>' : '')
+      + '</span></div>';
+  } else {
+    h += '<div style="height:10px"></div>';
+  }
+  return h;
 }
 
 function progressCard(j){
@@ -805,7 +853,17 @@ function detailView(j){
     h += '<div class="mval" style="cursor:pointer" onclick="editContract=true;render()">'+fmt(j.contract)
        + ' <span style="color:var(--muted);font-size:12px;font-weight:400">засах</span></div>';
   }
-  h += '</div><div><div class="mlabel">Орсон орлого</div><div class="mval">'+fmt(e)+'</div></div>'
+  h += '</div><div><div class="mlabel">Хугацаа</div>'
+    + (ui.dates
+        ? '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">'
+          + '<input id="edStart" type="date" value="'+(j.startDate||'')+'" style="width:142px;padding:6px 8px;font-size:14px">'
+          + '<input id="edEnd" type="date" value="'+(j.endDate||'')+'" style="width:142px;padding:6px 8px;font-size:14px">'
+          + '<button class="btn" style="width:auto;padding:6px 12px;font-size:14px" onclick="saveDates()">OK</button></div>'
+        : '<div class="mval" style="cursor:pointer" onclick="ui={dates:1};render()">'
+          + (j.startDate && j.endDate ? j.startDate+' → '+j.endDate : 'оруулах')
+          + ' <span style="color:var(--muted);font-size:12px;font-weight:400">засах</span></div>')
+    + '</div>'
+    + '<div><div class="mlabel">Орсон орлого</div><div class="mval">'+fmt(e)+'</div></div>'
     + '<div><div class="mlabel">Нийт зардал</div><div class="mval">'+fmt(s)+'</div></div>'
     + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(av)+'</div></div>'
     + '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+workDays(j)+'</div></div>'
@@ -1184,7 +1242,11 @@ function rosterView(){
   if(roster.length === 0 && !ui.rAdd){
     h += '<div class="empty">Ажилтан бүртгээгүй байна. Нэмсэн ажилтнаа дараа нь аль ч ажилд дуудаж оруулна.</div>';
   }
-  roster.forEach(r => {
+  const sorted = roster.slice().sort(function(a,b){
+    const sa = rosterStats(a), sb = rosterStats(b);
+    return (sb.due + sb.bonDue) - (sa.due + sa.bonDue);
+  });
+  sorted.forEach(r => {
     if(ui.rEdit === r.id){
       h += wForm('re', r.name, r.rate, 'Хадгалах', "saveRosterEdit('"+r.id+"')", r.role);
       return;
@@ -1734,8 +1796,10 @@ function addJob(){
   const c = num(document.getElementById('nContract').value);
   if(!name || !(c>0)){ alert('Ажлын нэр болон гэрээний дүнг оруулна уу.'); return; }
   const mem = admin && admin !== me ? [admin, me] : [me];
+  const sd = (document.getElementById('nStart')||{}).value || '';
+  const ed = (document.getElementById('nEnd')||{}).value || '';
   jobs.unshift({id:uid(), name, contract:c, type:newType, owner:admin||me, members:mem,
-    createdBy:me, createdAt:Date.now(),
+    startDate:sd, endDate:ed, createdBy:me, createdAt:Date.now(),
     incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[], plan:[]});
   newJob=false; save(); render();
 }
@@ -2124,6 +2188,13 @@ function delEntry(eid){
   }
   else j.incomes = j.incomes.filter(e=>e.id!==eid);
   save(); render();
+}
+
+function saveDates(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.startDate = (document.getElementById('edStart')||{}).value || '';
+  j.endDate = (document.getElementById('edEnd')||{}).value || '';
+  save(); ui={}; render();
 }
 
 function saveContract(){
