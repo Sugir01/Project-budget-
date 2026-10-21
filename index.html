@@ -686,7 +686,7 @@ function progBars(j){
   let h = '<div class="prog"><div class="pl"><span>Гүйцэтгэл</span><span>'+Math.round(pr)+'%</span></div>'
     + '<div class="pb">'+mk+'<i style="width:'+Math.min(pr,100)+'%;background:var(--blue)"></i></div></div>'
     + '<div class="prog"><div class="pl"><span>Төсвийн зарцуулалт</span><span>'
-    + Math.round(base)+'%'+(bn > 0 ? ' + '+Math.round(bn)+'%' : '')+'</span></div>'
+    + Math.round(sp)+'%</span></div>'
     + '<div class="pb">'+mk
     + '<i style="width:'+Math.min(base,100)+'%;background:'+bcol+'"></i>'
     + (bn > 0 ? '<i style="width:'+Math.min(bn, Math.max(0,100-base))+'%;background:var(--asset)"></i>' : '')
