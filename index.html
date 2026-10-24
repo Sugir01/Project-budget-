@@ -262,6 +262,7 @@ const norm = j => ({
   wagePays: j.wagePays||[],
   bonuses: j.bonuses||[],
   plan: j.plan||[],
+  stops: j.stops||[],
   coPct: j.coPct || 0,
   members: j.members||[],
   expenses: (j.expenses||[]).map(e=>({...e, asset: !!e.asset}))
@@ -277,7 +278,7 @@ function clean(v){
   return v;
 }
 
-const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses','plan'];
+const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses','plan','stops'];
 const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct','startDate','endDate'];
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
@@ -516,14 +517,22 @@ const earnedDays = j => (j.plan||[]).reduce((s,t)=>s+(t.days||0)*taskPct(t)/100,
 const hasPlan = j => (j.plan||[]).length > 0 && planDays(j) > 0;
 const jobProgress = j => hasPlan(j) ? earnedDays(j)/planDays(j)*100 : (j.progress||0);
 const dnum = d => d ? Date.parse(d+'T00:00:00Z') : 0;
+const dstr = ms => new Date(ms).toISOString().slice(0,10);
+const stopDays = j => (j.stops||[]).reduce((t,x)=>t+(x.days||0), 0);
+// захиалагчийн зогсолтоор сунгасан эцсийн хугацаа
+function effEnd(j){
+  const b = dnum(j.endDate);
+  if(!b) return 0;
+  return b + stopDays(j) * 86400000;
+}
 function timePct(j){
-  const a = dnum(j.startDate), b = dnum(j.endDate);
+  const a = dnum(j.startDate), b = effEnd(j);
   if(!a || !b || b <= a) return null;
   const n = dnum(today());
   return Math.max(0, Math.min(100, (n - a) / (b - a) * 100));
 }
 function daysLeft(j){
-  const b = dnum(j.endDate);
+  const b = effEnd(j);
   if(!b) return null;
   return Math.round((b - dnum(today())) / 86400000);
 }
@@ -763,6 +772,8 @@ function progressCard(j){
       + nd(Math.round(md/pr*100))+' хүн өдөр</b> шаардагдана</div>';
   }
 
+  h += stopBox(j);
+
   if(lag >= 10){
     h += '<div class="warn">⚠ Зарцуулалт гүйцэтгэлээс '+Math.round(lag)+'% түрүүлж байна. Зардлаа хянах хэрэгтэй.</div>';
   } else if(pr > 0 && s > 0){
@@ -772,6 +783,60 @@ function progressCard(j){
       + 'гүйцэтгэл автоматаар тооцогдож, энэ гулсуур хэрэггүй болно.</div>';
   }
   return h + '</div>';
+}
+
+function stopBox(j){
+  if(!j.endDate) return '';
+  const L = (j.stops||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
+  const td = stopDays(j);
+  let h = '<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--line)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
+    + '<span style="font-size:13.5px;color:var(--muted)">Захиалагчаас шалтгаалсан зогсолт</span>'
+    + '<button class="small" onclick="ui={stAdd:1};render()">+ Зогсолт</button></div>';
+  if(td > 0){
+    h += '<div class="fc" style="margin-top:6px">Нийт <b>'+td+' хоног</b> · гэрээний хугацаа '
+      + '<b>'+dstr(effEnd(j))+'</b> хүртэл сунгасан</div>';
+  }
+  if(ui.stAdd){
+    h += '<div class="inf" style="margin-top:9px">'
+      + '<input id="stDays" inputmode="numeric" placeholder="Хэдэн хоног зогссон">'
+      + '<input id="stNote" placeholder="Шалтгаан (зураг хүлээгдсэн, талбай бэлэн бус…)">'
+      + '<input id="stDate" type="date" value="'+today()+'">'
+      + '<div class="btns"><button class="btn" onclick="addStop()">Нэмэх</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  }
+  if(L.length){
+    h += '<div style="margin-top:8px">';
+    L.forEach(x => {
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;'
+        + 'padding:7px 0;border-bottom:1px solid #EFF2EE">'
+        + '<span style="min-width:0"><span style="font-size:14px">'+esc(x.note||'Зогсолт')+'</span>'
+        + '<span class="rdate">'+x.date+'</span></span>'
+        + '<span style="display:flex;align-items:center;gap:6px;flex:none">'
+        + '<b style="white-space:nowrap">'+x.days+' хоног</b>'
+        + '<button class="x" onclick="delStop(\''+x.id+'\')">×</button></span></div>';
+    });
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+
+function addStop(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const d = parseInt(String((document.getElementById('stDays')||{}).value||'').replace(/[^0-9]/g,''), 10);
+  if(!(d > 0)){ alert('Хоногийн тоог оруулна уу.'); return; }
+  j.stops = j.stops || [];
+  j.stops.push({id: uid(), days: d,
+    note: ((document.getElementById('stNote')||{}).value||'').trim(),
+    date: (document.getElementById('stDate')||{}).value || today(),
+    by: me || ''});
+  save(); ui = {}; render();
+}
+
+function delStop(sid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.stops = (j.stops||[]).filter(x=>x.id!==sid);
+  save(); render();
 }
 
 function catCard(j){
@@ -895,8 +960,12 @@ function detailView(j){
           + '<input id="edEnd" type="date" value="'+(j.endDate||'')+'" style="width:142px;padding:6px 8px;font-size:14px">'
           + '<button class="btn" style="width:auto;padding:6px 12px;font-size:14px" onclick="saveDates()">OK</button></div>'
         : '<div class="mval" style="cursor:pointer" onclick="ui={dates:1};render()">'
-          + (j.startDate && j.endDate ? j.startDate+' → '+j.endDate : 'оруулах')
-          + ' <span style="color:var(--muted);font-size:12px;font-weight:400">засах</span></div>')
+          + (j.startDate && j.endDate
+              ? j.startDate+' → '+(stopDays(j) > 0 ? dstr(effEnd(j)) : j.endDate)
+              : 'оруулах')
+          + ' <span style="color:var(--muted);font-size:12px;font-weight:400">засах</span></div>'
+          + (stopDays(j) > 0
+              ? '<div class="rdate">Гэрээ '+j.endDate+' · +'+stopDays(j)+' хоног сунгасан</div>' : ''))
     + '</div>'
     + '<div><div class="mlabel">Орсон орлого</div><div class="mval">'+fmt(e)+'</div></div>'
     + '<div><div class="mlabel">Нийт зардал</div><div class="mval">'+fmt(s)+'</div></div>'
@@ -1965,7 +2034,7 @@ function addJob(){
   const ed = (document.getElementById('nEnd')||{}).value || '';
   jobs.unshift({id:uid(), name, contract:c, type:newType, owner:admin||me, members:mem,
     startDate:sd, endDate:ed, createdBy:me, createdAt:Date.now(),
-    incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[], plan:[]});
+    incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[], plan:[], stops:[]});
   newJob=false; save(); render();
 }
 
