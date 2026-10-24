@@ -1261,7 +1261,7 @@ function rosterJobs(r){
     if(!w) return;
     const d = wkDays(j, w.id), pd = wkPaidDays(j, w.id);
     out.push({j:j, w:w, days:d, paid:pd, left:d-pd, due:Math.max(0,(d-pd)*w.rate),
-      bon: w.lead ? leadShare(j, w.id) : 0});
+      bon: (w.lead && j.done) ? leadShare(j, w.id) : 0});
   });
   return out;
 }
@@ -1322,7 +1322,7 @@ function rosterStats(r){
     days += wkDays(j, w.id);
     paid += (j.wagePays||[]).filter(p=>p.workerId===w.id).reduce((s,p)=>s+p.amount,0);
     bonus += wkBonus(j, w.id);
-    if(w.lead) bonDue += leadShare(j, w.id);
+    if(w.lead && j.done) bonDue += leadShare(j, w.id);
     const d = wkDue(j, w);
     due += d;
     if(d > 0) open.push({name: j.name, amt: d, days: wkDays(j,w.id) - wkPaidDays(j,w.id)});
@@ -1557,8 +1557,7 @@ function payRosterWage(rid){
       const bid = uid();
       x.j.bonuses = x.j.bonuses || [];
       x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: a.bon, note: 'Ашгийн урамшуулал',
-        kind: 'profit', rest: Math.max(0, Math.round(x.bon - a.bon)),
-        date: dt, expenseId: bid});
+        kind: 'profit', date: dt, expenseId: bid});
       x.j.expenses.push({id: bid, desc: 'Ашгийн урамшуулал \u2014 '+x.w.name
         + ' ('+nd(x.days)+' өдөр)', amount: a.bon, date: dt, cat: 'wage', asset: false});
     }
@@ -2193,12 +2192,10 @@ function payWage(wid){
 
 const gotProfitBonus = (j,wid) => (j.bonuses||[]).some(b => b.workerId===wid && b.kind==='profit');
 
-// тухайн удирдагчид өмнө нь олгосон ашгийн урамшууллын сүүлчийн бичилт
-function lastProfit(j, wid){
-  const a = (j.bonuses||[]).filter(b => b.workerId===wid && b.kind==='profit');
-  return a.length ? a[a.length-1] : null;
-}
-const leadRest = (j,wid) => { const p = lastProfit(j,wid); return p ? Math.max(0, p.rest||0) : 0; };
+// тухайн удирдагчид өмнө олгосон ашгийн урамшууллын нийлбэр
+const paidProfit = (j,wid) => (j.bonuses||[])
+  .filter(b => b.workerId===wid && b.kind==='profit')
+  .reduce((t,b)=>t+(b.amount||0), 0);
 
 function bonusCalc(j, Wall){
   const leads = (Wall || j.workers || []).filter(w => w.lead);
@@ -2206,24 +2203,36 @@ function bonusCalc(j, Wall){
   const cost = spent(j) + wageDue(j);
   const gross = j.contract - cost;
   const coShare = j.contract * pct / 100;
-  const pool = gross - coShare;
-  // хэсэгчлэн олгосон хүмүүсийн үлдэгдэл нь амлалт тул санд хуваагдахгүй
-  const committed = leads.reduce((t,w)=>t + leadRest(j, w.id), 0);
-  const fresh = leads.filter(w => !lastProfit(j, w.id) && wkDays(j, w.id) > 0);
-  const totalDays = fresh.reduce((t,w)=>t+wkDays(j,w.id), 0);
-  const freshPool = pool - committed;
-  const paidL = leads.filter(w => lastProfit(j, w.id) && leadRest(j, w.id) <= 0);
-  const picked = fresh.slice();
-  return {pct, cost, gross, coShare, pool, committed, freshPool, leads, paidL, picked, totalDays};
+  const pool = gross - coShare;                       // одоо үлдсэн сан
+  const paidTot = leads.reduce((t,w)=>t+paidProfit(j, w.id), 0);
+  const grossPool = pool + paidTot;                   // олголтоос өмнөх бүтэн сан
+  const active = leads.filter(w => wkDays(j, w.id) > 0);
+  const totalDays = active.reduce((t,w)=>t+wkDays(j, w.id), 0);
+
+  // ногдох дүн = бүтэн сангаас өдрөөр хувьчилсан дүн хасах өмнө авсан
+  const shares = {};
+  let want = 0;
+  active.forEach(w => {
+    const ent = totalDays > 0 ? grossPool * wkDays(j, w.id) / totalDays : 0;
+    const v = Math.max(0, ent - paidProfit(j, w.id));
+    shares[w.id] = v; want += v;
+  });
+  // үлдсэн сангаас хэтрэхгүй байхаар жигдрүүлнэ
+  const cap = Math.max(0, pool);
+  const k = (want > cap && want > 0) ? cap / want : 1;
+  active.forEach(w => { shares[w.id] = Math.round(shares[w.id] * k); });
+
+  const picked = active.filter(w => shares[w.id] > 0);
+  const paidL = leads.filter(w => paidProfit(j, w.id) > 0 && !(shares[w.id] > 0));
+  return {pct, cost, gross, coShare, pool, grossPool, paidTot, shares,
+          leads, paidL, picked, totalDays};
 }
 
 // нэг удирдагчид ногдох ашгийн урамшуулал
 function leadShare(j, wid){
-  if(lastProfit(j, wid)) return leadRest(j, wid);
   const c = bonusCalc(j, j.workers||[]);
-  if(c.freshPool <= 0 || c.totalDays <= 0) return 0;
-  if(!c.picked.some(w => w.id === wid)) return 0;
-  return Math.round(c.freshPool * wkDays(j, wid) / c.totalDays);
+  if(c.pool <= 0) return 0;
+  return c.shares[wid] || 0;
 }
 
 function bonusBox(j, W){
@@ -2255,9 +2264,9 @@ function bonusBox(j, W){
     return h + '<div class="warn" style="margin:0">Хуваарилах ашиг алга. Компанийн ашгийн хувийг '
       + 'бууруулах, эсвэл зардлаа хянах хэрэгтэй.</div></div></div>';
   }
-  if(c.committed > 0){
-    h += '<div class="rdate" style="margin:-4px 0 6px">Үүнээс '+fmt(c.committed)
-      + ' нь хэсэгчлэн олгосон удирдагчдын үлдэгдэл.</div>';
+  if(c.paidTot > 0){
+    h += '<div class="rdate" style="margin:-4px 0 6px">Өмнө '+fmt(c.paidTot)
+      + ' олгосон · нийт сан '+fmt(c.grossPool)+'.</div>';
   }
   if(c.leads.length === 0){
     return h + '<div class="note" style="padding:0">Удирдагч тэмдэглээгүй байна. Дээрх "Ажилчид" '
@@ -2269,20 +2278,24 @@ function bonusBox(j, W){
 
   c.leads.forEach(w => {
     const d = wkDays(j, w.id);
-    const share = leadShare(j, w.id);
-    const done = !!lastProfit(j, w.id) && share <= 0;
+    const share = c.shares[w.id] || 0;
+    const pd = paidProfit(j, w.id);
+    const done = pd > 0 && share <= 0;
     h += '<div class="brow">'
       + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(w.name)+'</span>'
       + '<span class="rdate">'+nd(d)+' өдөр'
-      + (!done && c.totalDays ? ' \u00B7 '+Math.round(d/c.totalDays*100)+'%' : '')
-      + (done ? ' \u00B7 олгосон' : '')+'</span></span>'
+      + (c.totalDays ? ' \u00B7 '+Math.round(d/c.totalDays*100)+'%' : '')
+      + (pd > 0 ? ' \u00B7 олгосон '+fmt(pd) : '')+'</span></span>'
       + '<b style="white-space:nowrap;color:'+(share>0?'var(--good)':'var(--muted)')+'">'
       + (done ? '\u2713' : (share>0 ? fmt(share) : '\u2014'))+'</b></div>';
   });
 
   if(c.totalDays > 0){
-    h += '<div class="okmsg" style="margin-top:10px">Олголтыг нүүр хуудасны "Ажилчид" цэснээс '
-      + 'тухайн хүний цалинтай хамт хийнэ.</div>';
+    h += j.done
+      ? '<div class="okmsg" style="margin-top:10px">Ажил дууссан. Олголтыг нүүр хуудасны '
+        + '"Ажилчид" цэснээс тухайн хүний цалинтай хамт хийнэ.</div>'
+      : '<div class="warn" style="margin-top:10px">Энэ бол урьдчилсан тооцоо. Ажлыг '
+        + '"Ажил дууссан" гэж тэмдэглэсний дараа "Ажилчид" цэснээс олгох боломжтой болно.</div>';
   } else if(c.paidL.length === c.leads.length && c.leads.length > 0){
     h += '<div class="okmsg" style="margin-top:10px">Бүх удирдагчид олгогдсон.</div>';
   } else {
@@ -2323,7 +2336,7 @@ function payProfitBonus(){
   j.bonuses = j.bonuses || [];
   c.picked.forEach(w => {
     const d = wkDays(j, w.id);
-    const amt = Math.round(c.pool * d / c.totalDays);
+    const amt = c.shares[w.id] || 0;
     if(amt <= 0) return;
     const eid = uid();
     j.bonuses.push({id: uid(), workerId: w.id, amount: amt, note: 'Ашгийн урамшуулал',
