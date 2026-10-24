@@ -235,6 +235,7 @@ let openW = false, openM = false, openB = false;
 let openDone = {};
 let bonPick = {};
 let lastW = '', lastT = '', lastD = '';
+let expFilter = '';
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
 const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
@@ -1186,9 +1187,47 @@ function detailView(j){
   h += '<button class="btn '+(tab==='inc'?'blue':'')+'" onclick="addEntry()">'
     + (tab==='exp'?'Зардал нэмэх':'Орлого нэмэх')+'</button></div>';
 
-  const list = (tab==='exp'? j.expenses : j.incomes).slice().sort((a,b)=> a.date<b.date?1:-1);
+  let list = (tab==='exp'? j.expenses : j.incomes).slice().sort((a,b)=> a.date<b.date?1:-1);
+
+  if(tab === 'exp' && list.length > 0){
+    const bonIds = {};
+    (j.bonuses||[]).forEach(b => { if(b.expenseId) bonIds[b.expenseId] = 1; });
+    const keys = [];
+    CATS.forEach(c => {
+      const v = list.filter(e => catOf(e.cat).k === c.k && !(c.k==='wage' && bonIds[e.id]))
+        .reduce((t,e)=>t+e.amount, 0);
+      if(v > 0) keys.push({k:c.k, t:c.t, c:c.c, v:v});
+    });
+    const bv = list.filter(e => bonIds[e.id]).reduce((t,e)=>t+e.amount, 0);
+    if(bv > 0) keys.push({k:'__bon', t:'Урамшуулал', c:'#8A6A1F', v:bv});
+
+    if(keys.length > 1){
+      if(!keys.some(x=>x.k===expFilter)) expFilter = '';
+      h += '<div class="chips" style="margin:0 0 10px">'
+        + '<button class="chip'+(expFilter===''?' on':'')+'" onclick="expFilter=\'\';render()">'
+        + 'Бүгд</button>'
+        + keys.map(x => '<button class="chip'+(expFilter===x.k?' on':'')
+            + '" onclick="expFilter=\''+x.k+'\';render()">'
+            + '<i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'
+            + x.c+';margin-right:5px"></i>'+x.t+'</button>').join('')
+        + '</div>';
+    }
+    if(expFilter){
+      list = expFilter === '__bon'
+        ? list.filter(e => bonIds[e.id])
+        : list.filter(e => catOf(e.cat).k === expFilter && !(expFilter==='wage' && bonIds[e.id]));
+      const sub = list.reduce((t,e)=>t+e.amount, 0);
+      const nm = (keys.find(x=>x.k===expFilter)||{}).t || '';
+      h += '<div class="total" style="padding:11px 13px;margin-bottom:10px">'
+        + '<span style="font-size:13.5px">'+esc(nm)+' · '+list.length+' бичилт</span>'
+        + '<b style="font-size:16px">'+fmt(sub)+'</b></div>';
+    }
+  }
+
   if(list.length===0){
-    h += '<div class="note">'+(tab==='exp'?'Одоогоор зардал бүртгээгүй байна.':'Одоогоор орлого бүртгээгүй байна.')+'</div>';
+    h += '<div class="note">'+(tab==='exp'
+      ? (expFilter ? 'Энэ ангилалд бичилт алга.' : 'Одоогоор зардал бүртгээгүй байна.')
+      : 'Одоогоор орлого бүртгээгүй байна.')+'</div>';
   } else {
     list.forEach(it=>{
       const cls = (tab==='exp' && it.asset) ? 'asset' : tab;
@@ -1916,7 +1955,7 @@ function toggleDone(){
 }
 
 function openJob(id){ openId=id; tab='exp'; editContract=false; ui={}; pickOpen=false;
-  lastW=''; lastT=''; lastD=''; openW=false; openM=false; openB=false; bonPick={}; render(); }
+  lastW=''; lastT=''; lastD=''; openW=false; openM=false; openB=false; bonPick={}; expFilter=''; render(); }
 
 function addJob(){
   const name = document.getElementById('nName').value.trim();
