@@ -284,6 +284,8 @@ const FIELDS = ['name','contract','type','progress','done','doneDate','members',
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
 const isAdmin = () => !!me && me === admin;
+let matUsers = [];
+const canMat = () => isAdmin() || (!!me && matUsers.indexOf(me) >= 0);
 let shadow = {}, rshadow = {}, sshadow = {};
 
 function legacyJobs(){
@@ -341,8 +343,24 @@ function save(){
   });
 }
 
-function saveStock(){
+function saveMatUsers(){
   if(!me || !window.FB || !isAdmin()) return;
+  try {
+    FB.setDoc(FB.doc(FB.db, 'config', 'admin'), clean({email: admin || me, mat: matUsers}))
+      .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
+  } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
+}
+
+function toggleMat(em){
+  if(!isAdmin()) return;
+  em = String(em||'').toLowerCase();
+  if(!em || em === admin) return;
+  matUsers = matUsers.indexOf(em) >= 0 ? matUsers.filter(x => x !== em) : matUsers.concat([em]);
+  saveMatUsers(); render();
+}
+
+function saveStock(){
+  if(!me || !window.FB || !canMat()) return;
   stock.forEach(it => {
     const cur = JSON.stringify(it);
     if(sshadow[it.id] === cur) return;
@@ -397,6 +415,15 @@ function subscribe(){
       roster = snap.docs.map(d => ({...d.data(), id: d.id}));
       rshadow = {}; roster.forEach(r => rshadow[r.id] = JSON.stringify(r));
       cloudRender();
+    },
+    ()=>{}
+  );
+  F.onSnapshot(
+    F.doc(F.db, 'config', 'admin'),
+    d => {
+      const v = (d && d.exists && d.exists()) ? (d.data().mat||[]) : [];
+      const nw = v.map(x => String(x).toLowerCase());
+      if(JSON.stringify(nw) !== JSON.stringify(matUsers)){ matUsers = nw; cloudRender(); }
     },
     ()=>{}
   );
@@ -616,7 +643,7 @@ function render(){
   else if(view === 'done') html = doneView();
   else if(view === 'types' && isAdmin()) html = typesView();
   else if(view === 'roster') html = rosterView();
-  else if(view === 'stock' && isAdmin()) html = stockView();
+  else if(view === 'stock' && canMat()) html = stockView();
   else html = listView();
   document.getElementById('app').innerHTML = html;
   document.querySelectorAll('.chartscroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
@@ -675,7 +702,7 @@ function listView(){
   h += '<button class="navbtn" onclick="view=\'roster\';render()">'
      + '<span>Ажилчид</span><span style="color:var(--muted)">'+roster.length+' хүн ›</span></button>';
 
-  if(isAdmin()){
+  if(canMat()){
     const sv = stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0);
     h += '<button class="navbtn" onclick="view=\'stock\';ui={};render()">'
       + '<span>Материал</span><span style="color:var(--muted)">'+fmt(sv)+' ›</span></button>';
@@ -1411,8 +1438,10 @@ function stockView(){
           + 'onclick="ui={sSell:\''+it.id+'\'};render()">Зарах</button>'
           + '<button class="small" onclick="ui={sJob:\''+it.id+'\'};render()">Ажилд гаргах</button>' : '')
       + ((it.moves||[]).length ? '<button class="small" onclick="toggleMoves(\''+it.id+'\')">Гүйлгээ</button>' : '')
-      + '<button class="small" onclick="ui={sEdit:\''+it.id+'\'};render()">Засах</button>'
-      + '<button class="small warn" onclick="ui={sDel:\''+it.id+'\'};render()">Устгах</button></div>'
+      + (isAdmin()
+          ? '<button class="small" onclick="ui={sEdit:\''+it.id+'\'};render()">Засах</button>'
+            + '<button class="small warn" onclick="ui={sDel:\''+it.id+'\'};render()">Устгах</button>'
+          : '')+'</div>'
       + (ui.sSell === it.id ? moveForm(it, 'sell') : '')
       + (ui.sJob === it.id ? moveForm(it, 'job') : '')
       + (ui.sMoves === it.id ? movesBox(it) : '')
@@ -1434,6 +1463,37 @@ function stockView(){
   } else {
     h += '<button class="btn" style="margin-top:8px" onclick="ui={sAdd:1};render()">+ Материал нэмэх</button>';
   }
+
+  if(isAdmin()){
+    const others = knownEmails().filter(x => x !== admin);
+    h += '<div class="sect" style="margin-top:14px">'
+      + '<button class="hd" onclick="ui={sPerm:'+(ui.sPerm?0:1)+'};render()">'
+      + '<span>Хандах эрх <span class="cnt">· '
+      + (matUsers.length ? matUsers.length+' инженер' : 'зөвхөн эзэн')+'</span></span>'
+      + '<span class="arw'+(ui.sPerm?' op':'')+'">›</span></button>';
+    if(ui.sPerm){
+      h += '<div class="bd">'
+        + '<div class="rdate" style="margin-bottom:6px">Сонгосон инженер материалын цэсийг хараад '
+        + 'бүртгэл, зарах, ажилд гаргах үйлдэл хийнэ. Засах, устгах зөвхөн эзэнд.</div>';
+      if(!others.length){
+        h += '<div class="note" style="padding:0">Өөр хэрэглэгч алга. Ажил дээр инженер нэмсэний дараа '
+          + 'энд харагдана.</div>';
+      }
+      others.forEach(em => {
+        const on = matUsers.indexOf(em) >= 0;
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
+          + 'padding:8px 0;border-bottom:1px solid #EFF2EE">'
+          + '<span style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+          + esc(em)+'</span>'
+          + '<button class="small'+(on?'':' ghost')+'" style="flex:none'
+          + (on?';border-color:#BBD4C4;color:var(--good)':'')+'" '
+          + 'onclick="toggleMat(\''+esc(em)+'\')">'+(on?'Эрхтэй ✓':'Эрх өгөх')+'</button></div>';
+      });
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+
   return h;
 }
 
@@ -2735,6 +2795,7 @@ function boot(){
   F.onAuthStateChanged(F.auth, u => {
     me = u ? (u.email||'').toLowerCase() : null;
     jobs = []; roster = []; stock = []; shadow = {}; rshadow = {}; sshadow = {}; admin = null;
+    matUsers = [];
     booted = !me; ui = {}; openId = null; view = 'list';
     if(!me){ render(); return; }
     try{ localStorage.setItem('last-email', me); }catch(e){}
@@ -2743,6 +2804,7 @@ function boot(){
     F.getDoc(ref).then(d => {
       if(d.exists() && d.data().email){
         admin = (d.data().email||'').toLowerCase();
+        matUsers = (d.data().mat||[]).map(x => String(x).toLowerCase());
         subscribe();
       } else {
         F.setDoc(ref, {email: me})
