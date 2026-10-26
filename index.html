@@ -229,6 +229,7 @@ const KEY = 'ajliin-zardal-v1';
 const RKEY = 'ajliin-ajilchid-v1';
 let jobs = [];
 let roster = [];
+let stock = [];
 let pickOpen = false;
 let ui = {};
 let openW = false, openM = false, openB = false;
@@ -283,7 +284,7 @@ const FIELDS = ['name','contract','type','progress','done','doneDate','members',
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
 const isAdmin = () => !!me && me === admin;
-let shadow = {}, rshadow = {};
+let shadow = {}, rshadow = {}, sshadow = {};
 
 function legacyJobs(){
   try{ return JSON.parse(localStorage.getItem(KEY)||'[]'); }catch(e){ return []; }
@@ -340,6 +341,25 @@ function save(){
   });
 }
 
+function saveStock(){
+  if(!me || !window.FB || !isAdmin()) return;
+  stock.forEach(it => {
+    const cur = JSON.stringify(it);
+    if(sshadow[it.id] === cur) return;
+    sshadow[it.id] = cur;
+    try {
+      FB.setDoc(FB.doc(FB.db, 'stock', it.id), clean({...it, owner: admin || me}))
+        .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
+    } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
+  });
+  Object.keys(sshadow).forEach(id => {
+    if(!stock.some(x => x.id === id)){
+      delete sshadow[id];
+      try { FB.deleteDoc(FB.doc(FB.db, 'stock', id)).catch(()=>{}); } catch(e) {}
+    }
+  });
+}
+
 function saveRoster(){
   if(!me || !window.FB || !isAdmin()) return;
   roster.forEach(r => {
@@ -376,6 +396,15 @@ function subscribe(){
     snap => {
       roster = snap.docs.map(d => ({...d.data(), id: d.id}));
       rshadow = {}; roster.forEach(r => rshadow[r.id] = JSON.stringify(r));
+      cloudRender();
+    },
+    ()=>{}
+  );
+  F.onSnapshot(
+    F.query(F.collection(F.db, 'stock'), F.where('owner', '==', admin || me)),
+    snap => {
+      stock = snap.docs.map(d => ({...d.data(), id: d.id, moves: (d.data().moves)||[]}));
+      sshadow = {}; stock.forEach(x => sshadow[x.id] = JSON.stringify(x));
       cloudRender();
     },
     ()=>{}
@@ -587,6 +616,7 @@ function render(){
   else if(view === 'done') html = doneView();
   else if(view === 'types' && isAdmin()) html = typesView();
   else if(view === 'roster') html = rosterView();
+  else if(view === 'stock' && isAdmin()) html = stockView();
   else html = listView();
   document.getElementById('app').innerHTML = html;
   document.querySelectorAll('.chartscroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
@@ -644,6 +674,12 @@ function listView(){
 
   h += '<button class="navbtn" onclick="view=\'roster\';render()">'
      + '<span>Ажилчид</span><span style="color:var(--muted)">'+roster.length+' хүн ›</span></button>';
+
+  if(isAdmin()){
+    const sv = stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0);
+    h += '<button class="navbtn" onclick="view=\'stock\';ui={};render()">'
+      + '<span>Материал</span><span style="color:var(--muted)">'+fmt(sv)+' ›</span></button>';
+  }
 
   if(isAdmin()){
     h += '<button class="navbtn" onclick="view=\'types\';render()">'
@@ -1321,6 +1357,203 @@ function typeTag(j){
   const t = typeOf(j.type);
   if(!t) return '';
   return '<span class="tag" style="background:'+t.c+'22;color:'+t.c+'">'+t.t+'</span>';
+}
+
+const movedQty = it => (it.moves||[]).reduce((t,m)=>t+(m.qty||0), 0);
+const stockLeft = it => Math.max(0, (it.qty||0) - movedQty(it));
+const stockProfit = it => (it.moves||[]).reduce((t,m)=>t+((m.price||0)-(it.cost||0))*(m.qty||0), 0);
+const stockSold = it => (it.moves||[]).reduce((t,m)=>t+(m.price||0)*(m.qty||0), 0);
+
+function stockView(){
+  const left = stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0);
+  const prof = stock.reduce((t,x)=>t+stockProfit(x), 0);
+  const sold = stock.reduce((t,x)=>t+stockSold(x), 0);
+
+  let h = '<button class="link" onclick="view=\'list\';ui={};render()">← Буцах</button>'
+    + '<div class="hero"><div style="font-size:13px;opacity:.6">Материалын бүртгэл</div>'
+    + '<div class="pairs">'
+    + '<div class="pair"><div class="plabel">Үлдэгдлийн өртөг</div>'
+    + '<div class="pval" style="color:#8FD3AE">'+fmt(left)+'</div></div>'
+    + '<div class="pair"><div class="plabel">Материалын ашиг</div>'
+    + '<div class="pval '+(prof<0?'neg':'pos')+'">'+fmt(prof)+'</div></div></div>'
+    + '<div class="meta"><div><div class="mlabel">Нэр төрөл</div><div class="mval">'+stock.length+'</div></div>'
+    + '<div><div class="mlabel">Гарсан дүн</div><div class="mval">'+fmt(sold)+'</div></div></div></div>';
+
+  if(stock.length === 0 && !ui.sAdd){
+    h += '<div class="empty">Материал бүртгээгүй байна. Нэр, ширхэг, өртөг үнээр нь бүртгэнэ.</div>';
+  }
+
+  stock.forEach(it => {
+    if(ui.sEdit === it.id){
+      h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
+        + '<input id="seName" placeholder="Нэр" value="'+esc(it.name)+'" style="margin-bottom:8px">'
+        + '<div style="display:flex;gap:8px;margin-bottom:10px">'
+        + '<input id="seQty" inputmode="decimal" placeholder="Ширхэг" value="'+(it.qty||'')+'">'
+        + '<input id="seCost" inputmode="numeric" oninput="liveNum(this)" placeholder="Өртөг (₮)" value="'+group(it.cost||0)+'"></div>'
+        + '<div class="btns"><button class="btn" onclick="saveStockItem(\''+it.id+'\')">Хадгалах</button>'
+        + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+      return;
+    }
+    const lf = stockLeft(it), pf = stockProfit(it);
+    h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+      + '<span style="font-weight:600;font-size:15.5px">'+esc(it.name)+'</span>'
+      + '<span style="font-size:12.5px;color:var(--muted)">өртөг '+fmt(it.cost||0)+'</span></div>'
+      + '<div class="pairs" style="margin:9px 0 10px">'
+      + '<div class="pair"><div class="plabel">Үлдэгдэл</div>'
+      + '<div class="pval" style="color:'+(lf>0?'var(--blue)':'var(--muted)')+'">'+nd(lf)+' ш</div></div>'
+      + '<div class="pair"><div class="plabel">Ашиг</div>'
+      + '<div class="pval '+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</div></div></div>'
+      + '<div class="sub" style="margin:0 0 10px">Нийт '+nd(it.qty||0)+' ш · гарсан '+nd(movedQty(it))+' ш'
+      + ((it.moves||[]).length ? ' · '+(it.moves||[]).length+' гүйлгээ' : '')+'</div>'
+      + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
+      + (lf > 0 ? '<button class="small" style="border-color:#BBD4C4;color:var(--good)" '
+          + 'onclick="ui={sSell:\''+it.id+'\'};render()">Зарах</button>'
+          + '<button class="small" onclick="ui={sJob:\''+it.id+'\'};render()">Ажилд гаргах</button>' : '')
+      + ((it.moves||[]).length ? '<button class="small" onclick="toggleMoves(\''+it.id+'\')">Гүйлгээ</button>' : '')
+      + '<button class="small" onclick="ui={sEdit:\''+it.id+'\'};render()">Засах</button>'
+      + '<button class="small warn" onclick="ui={sDel:\''+it.id+'\'};render()">Устгах</button></div>'
+      + (ui.sSell === it.id ? moveForm(it, 'sell') : '')
+      + (ui.sJob === it.id ? moveForm(it, 'job') : '')
+      + (ui.sMoves === it.id ? movesBox(it) : '')
+      + (ui.sDel === it.id
+          ? confirmBox(esc(it.name)+' — устгах уу? Гүйлгээний түүх нь ч устана. '
+              + 'Ажил дээр бүртгэгдсэн зардал үлдэнэ.', "delStock('"+it.id+"')")
+          : '')
+      + '</div>';
+  });
+
+  if(ui.sAdd){
+    h += '<div class="inf">'
+      + '<input id="snName" placeholder="Материал / тоног төхөөрөмжийн нэр">'
+      + '<div style="display:flex;gap:8px">'
+      + '<input id="snQty" inputmode="decimal" placeholder="Ширхэг">'
+      + '<input id="snCost" inputmode="numeric" oninput="liveNum(this)" placeholder="Нэгж өртөг (₮)"></div>'
+      + '<div class="btns" style="margin-top:8px"><button class="btn" onclick="addStock()">Нэмэх</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  } else {
+    h += '<button class="btn" style="margin-top:8px" onclick="ui={sAdd:1};render()">+ Материал нэмэх</button>';
+  }
+  return h;
+}
+
+function moveForm(it, kind){
+  const lf = stockLeft(it);
+  const act = jobs.filter(j=>!j.done);
+  let h = '<div class="inf" style="margin-top:10px">'
+    + '<div class="rdate" style="margin-bottom:6px">'
+    + (kind==='sell' ? 'Шууд борлуулалт' : 'Ажилд гаргах — тухайн ажлын зардалд бүртгэгдэнэ')
+    + ' · үлдэгдэл '+nd(lf)+' ш · өртөг '+fmt(it.cost||0)+'</div>';
+  if(kind === 'job'){
+    if(!act.length) return h + '<div class="note" style="padding:0">Явагдаж буй ажил алга.</div>'
+      + '<div class="btns"><button class="btn ghost" onclick="ui={};render()">Хаах</button></div></div>';
+    h += '<select id="mvJob" class="wsel" style="margin-bottom:8px">'
+      + act.map(j=>'<option value="'+j.id+'">'+esc(j.name)+'</option>').join('')+'</select>';
+  }
+  h += '<div style="display:flex;gap:8px">'
+    + '<input id="mvQty" inputmode="decimal" placeholder="Ширхэг" '
+    + 'value="'+(ui.mvQ!==undefined?esc(ui.mvQ):'1')+'" onchange="ui.mvQ=this.value;render()">'
+    + '<input id="mvPrice" inputmode="numeric" oninput="liveNum(this)" placeholder="Нэгж үнэ (₮)" '
+    + 'value="'+(ui.mvP!==undefined?ui.mvP:'')+'" onchange="ui.mvP=this.value;render()"></div>'
+    + '<input id="mvDate" type="date" value="'+today()+'" style="margin-top:8px">';
+  const q = parseFloat(String(ui.mvQ!==undefined?ui.mvQ:'1').replace(',','.'))||0;
+  const pr = num(ui.mvP||'')||0;
+  if(q > 0 && pr > 0){
+    const tot = q*pr, prof = (pr-(it.cost||0))*q;
+    h += '<div class="calc" style="margin:8px 0">'
+      + '<div class="ln"><span>Нийт дүн</span><b>'+fmt(tot)+'</b></div>'
+      + '<div class="ln"><span>Өртөг</span><b>−'+fmt((it.cost||0)*q)+'</b></div>'
+      + '<div class="ln tot"><span>Материалын ашиг</span>'
+      + '<b class="'+(prof<0?'neg':'pos')+'">'+fmt(prof)+'</b></div></div>';
+  }
+  h += '<div class="btns"><button class="btn" onclick="doMove(\''+it.id+'\',\''+kind+'\')">'
+    + (kind==='sell'?'Зарах':'Гаргах')+'</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  return h;
+}
+
+function movesBox(it){
+  const L = (it.moves||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
+  let h = '<div class="inf" style="margin-top:10px">';
+  L.forEach(m => {
+    const j = jobs.find(x=>x.id===m.jobId);
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;'
+      + 'padding:7px 0;border-bottom:1px solid #EFF2EE">'
+      + '<span style="min-width:0"><span style="font-size:14px">'
+      + (m.type==='sell' ? 'Борлуулалт' : 'Ажилд: '+esc(j?j.name:'—'))+'</span>'
+      + '<span class="rdate">'+m.date+' · '+nd(m.qty)+' ш × '+fmt(m.price)+'</span></span>'
+      + '<span style="display:flex;align-items:center;gap:6px;flex:none">'
+      + '<b class="'+(((m.price||0)-(it.cost||0))<0?'neg':'pos')+'" style="white-space:nowrap">'
+      + fmt(((m.price||0)-(it.cost||0))*(m.qty||0))+'</b>'
+      + '<button class="x" onclick="delMove(\''+it.id+'\',\''+m.id+'\')">×</button></span></div>';
+  });
+  return h + '</div>';
+}
+
+function toggleMoves(id){ ui = (ui.sMoves===id) ? {} : {sMoves:id}; render(); }
+
+function addStock(){
+  const name = (document.getElementById('snName')||{}).value.trim();
+  const q = parseFloat(String((document.getElementById('snQty')||{}).value||'').replace(',','.'));
+  const c = num((document.getElementById('snCost')||{}).value||'') || 0;
+  if(!name){ alert('Нэрээ оруулна уу.'); return; }
+  if(!(q > 0)){ alert('Ширхэгийн тоог оруулна уу.'); return; }
+  stock.push({id: uid(), name: name, qty: q, cost: c, moves: [], owner: admin||me});
+  saveStock(); ui = {}; render();
+}
+
+function saveStockItem(id){
+  const it = stock.find(x=>x.id===id); if(!it) return;
+  const name = (document.getElementById('seName')||{}).value.trim();
+  const q = parseFloat(String((document.getElementById('seQty')||{}).value||'').replace(',','.'));
+  const c = num((document.getElementById('seCost')||{}).value||'');
+  if(name) it.name = name;
+  if(q >= 0) it.qty = q;
+  if(c >= 0) it.cost = c;
+  saveStock(); ui = {}; render();
+}
+
+function delStock(id){
+  stock = stock.filter(x=>x.id!==id);
+  saveStock(); ui = {}; render();
+}
+
+function doMove(id, kind){
+  const it = stock.find(x=>x.id===id); if(!it) return;
+  const q = parseFloat(String((document.getElementById('mvQty')||{}).value||'').replace(',','.'));
+  const pr = num((document.getElementById('mvPrice')||{}).value||'');
+  const dt = (document.getElementById('mvDate')||{}).value || today();
+  if(!(q > 0)){ alert('Ширхэгийн тоог оруулна уу.'); return; }
+  if(q > stockLeft(it)){ alert('Үлдэгдлээс их байна. Үлдэгдэл '+nd(stockLeft(it))+' ш.'); return; }
+  if(!(pr > 0)){ alert('Нэгж үнийг оруулна уу.'); return; }
+
+  let jobId = '';
+  if(kind === 'job'){
+    jobId = (document.getElementById('mvJob')||{}).value || '';
+    const j = jobs.find(x=>x.id===jobId);
+    if(!j){ alert('Ажлаа сонгоно уу.'); return; }
+    const eid = uid();
+    j.expenses.push({id: eid, desc: 'Материал \u2014 '+it.name+' ('+nd(q)+' ш × '+fmt(pr)+')',
+      amount: q*pr, date: dt, cat: 'mat', asset: false, by: me||''});
+    it.moves = it.moves || [];
+    it.moves.push({id: uid(), type:'job', qty: q, price: pr, date: dt, jobId: jobId, expenseId: eid});
+    save();
+  } else {
+    it.moves = it.moves || [];
+    it.moves.push({id: uid(), type:'sell', qty: q, price: pr, date: dt});
+  }
+  saveStock(); ui = {}; render();
+}
+
+function delMove(id, mid){
+  const it = stock.find(x=>x.id===id); if(!it) return;
+  const m = (it.moves||[]).find(x=>x.id===mid);
+  if(m && m.jobId && m.expenseId){
+    const j = jobs.find(x=>x.id===m.jobId);
+    if(j){ j.expenses = j.expenses.filter(e=>e.id!==m.expenseId); save(); }
+  }
+  it.moves = (it.moves||[]).filter(x=>x.id!==mid);
+  saveStock(); render();
 }
 
 function rosterJobs(r){
@@ -2501,7 +2734,7 @@ function boot(){
   const F = window.FB;
   F.onAuthStateChanged(F.auth, u => {
     me = u ? (u.email||'').toLowerCase() : null;
-    jobs = []; roster = []; shadow = {}; rshadow = {}; admin = null;
+    jobs = []; roster = []; stock = []; shadow = {}; rshadow = {}; sshadow = {}; admin = null;
     booted = !me; ui = {}; openId = null; view = 'list';
     if(!me){ render(); return; }
     try{ localStorage.setItem('last-email', me); }catch(e){}
