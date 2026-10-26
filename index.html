@@ -1406,6 +1406,15 @@ function stockView(){
     + '<div class="meta"><div><div class="mlabel">Нэр төрөл</div><div class="mval">'+stock.length+'</div></div>'
     + '<div><div class="mlabel">Гарсан дүн</div><div class="mval">'+fmt(sold)+'</div></div></div></div>';
 
+  const allM = [];
+  stock.forEach(it => (it.moves||[]).forEach(m => allM.push({m: m, it: it})));
+  if(allM.length){
+    h += '<button class="navbtn" onclick="ui={sAll:'+(ui.sAll?0:1)+'};render()">'
+      + '<span>Бүх гүйлгээ</span><span style="color:var(--muted)">'+allM.length+' гүйлгээ '
+      + (ui.sAll?'⌃':'›')+'</span></button>';
+    if(ui.sAll) return h + allMovesBox(allM);
+  }
+
   if(stock.length === 0 && !ui.sAdd){
     h += '<div class="empty">Материал бүртгээгүй байна. Нэр, ширхэг, өртөг үнээр нь бүртгэнэ.</div>';
   }
@@ -1532,21 +1541,71 @@ function moveForm(it, kind){
   return h;
 }
 
+function allMovesBox(L){
+  L = L.slice().sort((a,b) => a.m.date < b.m.date ? 1 : (a.m.date > b.m.date ? -1 : 0));
+  let tb = 0, ts = 0, sb = 0, ss = 0, jb = 0, js_ = 0, ns = 0, nj = 0;
+  let h = '<div class="inf" style="margin-top:4px">';
+  let last = '';
+  L.forEach(x => {
+    const it = x.it, m = x.m, c = it.cost || 0, q = m.qty || 0;
+    const buy = c*q, sell = (m.price||0)*q, pf = sell - buy;
+    tb += buy; ts += sell;
+    if(m.type === 'sell'){ sb += buy; ss += sell; ns++; } else { jb += buy; js_ += sell; nj++; }
+    if(m.date !== last){
+      h += '<div class="rdate" style="margin:'+(last?'11px':'0')+' 0 2px;font-weight:600">'
+        + m.date+'</div>';
+      last = m.date;
+    }
+    const j = jobs.find(y=>y.id===m.jobId);
+    h += '<div style="padding:7px 0;border-bottom:1px solid #EFF2EE">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px">'
+      + esc(it.name)+'<span class="rdate">'
+      + (m.type==='sell' ? 'Борлуулалт' : 'Ажилд: '+esc(j?j.name:'—'))+' · '+nd(q)+' ш</span></span>'
+      + '<button class="x" style="flex:none" onclick="delMove(\''+it.id+'\',\''+m.id+'\')">×</button></div>'
+      + '<div style="display:flex;gap:10px;margin-top:3px;font-size:12.5px;flex-wrap:wrap">'
+      + '<span style="color:var(--muted)">Авсан <b style="color:var(--ink)">'+fmt(buy)+'</b></span>'
+      + '<span style="color:var(--muted)">Зарсан <b style="color:var(--ink)">'+fmt(sell)+'</b></span>'
+      + '<span style="color:var(--muted)">Ашиг <b class="'+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</b></span>'
+      + '</div></div>';
+  });
+  h += '<div class="calc" style="margin-top:12px">'
+    + '<div class="ln"><span>Борлуулалт · '+ns+'</span><b>'+fmt(ss)+'</b></div>'
+    + '<div class="ln"><span>Ажилд гаргасан · '+nj+'</span><b>'+fmt(js_)+'</b></div>'
+    + '<div class="ln"><span>Авсан үнийн нийлбэр</span><b>'+fmt(tb)+'</b></div>'
+    + '<div class="ln"><span>Зарсан үнийн нийлбэр</span><b>'+fmt(ts)+'</b></div>'
+    + '<div class="ln tot"><span>Материалын ашиг</span>'
+    + '<b class="'+((ts-tb)<0?'neg':'pos')+'">'+fmt(ts-tb)+'</b></div></div>';
+  return h + '</div>';
+}
+
 function movesBox(it){
   const L = (it.moves||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
+  const c = it.cost || 0;
+  let tq = 0, tb = 0, ts = 0;
   let h = '<div class="inf" style="margin-top:10px">';
   L.forEach(m => {
     const j = jobs.find(x=>x.id===m.jobId);
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;'
-      + 'padding:7px 0;border-bottom:1px solid #EFF2EE">'
-      + '<span style="min-width:0"><span style="font-size:14px">'
-      + (m.type==='sell' ? 'Борлуулалт' : 'Ажилд: '+esc(j?j.name:'—'))+'</span>'
-      + '<span class="rdate">'+m.date+' · '+nd(m.qty)+' ш × '+fmt(m.price)+'</span></span>'
-      + '<span style="display:flex;align-items:center;gap:6px;flex:none">'
-      + '<b class="'+(((m.price||0)-(it.cost||0))<0?'neg':'pos')+'" style="white-space:nowrap">'
-      + fmt(((m.price||0)-(it.cost||0))*(m.qty||0))+'</b>'
-      + '<button class="x" onclick="delMove(\''+it.id+'\',\''+m.id+'\')">×</button></span></div>';
+    const q = m.qty || 0, buy = c*q, sell = (m.price||0)*q, pf = sell - buy;
+    tq += q; tb += buy; ts += sell;
+    h += '<div style="padding:8px 0;border-bottom:1px solid #EFF2EE">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px">'
+      + (m.type==='sell' ? 'Борлуулалт' : 'Ажилд: '+esc(j?j.name:'—'))
+      + '<span class="rdate">'+m.date+' · '+nd(q)+' ш</span></span>'
+      + '<button class="x" style="flex:none" onclick="delMove(\''+it.id+'\',\''+m.id+'\')">×</button></div>'
+      + '<div style="display:flex;gap:10px;margin-top:3px;font-size:12.5px;flex-wrap:wrap">'
+      + '<span style="color:var(--muted)">Авсан <b style="color:var(--ink)">'+fmt(buy)+'</b></span>'
+      + '<span style="color:var(--muted)">Зарсан <b style="color:var(--ink)">'+fmt(sell)+'</b></span>'
+      + '<span style="color:var(--muted)">Ашиг <b class="'+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</b></span>'
+      + '</div></div>';
   });
+  h += '<div class="calc" style="margin-top:10px">'
+    + '<div class="ln"><span>Гарсан нийт</span><b>'+nd(tq)+' ш</b></div>'
+    + '<div class="ln"><span>Авсан үнийн нийлбэр</span><b>'+fmt(tb)+'</b></div>'
+    + '<div class="ln"><span>Зарсан үнийн нийлбэр</span><b>'+fmt(ts)+'</b></div>'
+    + '<div class="ln tot"><span>Материалын ашиг</span>'
+    + '<b class="'+((ts-tb)<0?'neg':'pos')+'">'+fmt(ts-tb)+'</b></div></div>';
   return h + '</div>';
 }
 
