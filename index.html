@@ -1247,7 +1247,8 @@ function detailView(j){
       if(ui.wAdd){
         h += wForm('wa', '', 0, 'Нэмэх', 'addWorker()');
       } else {
-        const avail = roster.filter(r => !W.some(w => w.rid === r.id || w.name === r.name));
+        const inJob = r => W.some(w => w.rid === r.id || w.name === r.name);
+        const nLeft = roster.filter(r => !inJob(r)).length;
         h += '<div style="display:flex;gap:8px;margin:12px 0 0">'
           + '<button class="btn ghost" style="flex:1" onclick="ui={wAdd:1};render()">+ Шинэ ажилтан</button>'
           + '<button class="btn ghost" style="flex:1" onclick="pickOpen=!pickOpen;render()">'
@@ -1256,15 +1257,25 @@ function detailView(j){
           h += '<div style="margin-top:10px">';
           if(roster.length === 0){
             h += '<div class="note" style="padding:0">Ажилчдын жагсаалт хоосон байна. Нүүр хуудасны "Ажилчид" цэснээс нэмнэ үү.</div>';
-          } else if(avail.length === 0){
-            h += '<div class="note" style="padding:0">Жагсаалтын бүх ажилтан энэ ажилд нэмэгдсэн байна.</div>';
           } else {
-            avail.forEach(r => {
+            h += '<div class="rdate" style="margin-bottom:4px">'
+              + (nLeft ? 'Нэмэх ажилтнаа дарна. Жагсаалт хаагдахгүй — дараалан нэмж болно.'
+                       : 'Жагсаалтын бүх ажилтан энэ ажилд нэмэгдсэн байна.')
+              + ' · ' + (roster.length - nLeft) + '/' + roster.length + ' нэмэгдсэн</div>';
+            const ord = roster.slice().sort((a,b) => (inJob(a)?1:0) - (inJob(b)?1:0));
+            ord.forEach(r => {
+              const on = inJob(r);
               h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
-                + 'padding:10px 0;border-bottom:1px solid #EFF2EE">'
-                + '<div style="min-width:0"><div style="font-size:15px;font-weight:500">'+esc(r.name)+'</div>'
+                + 'padding:10px 0;border-bottom:1px solid #EFF2EE'+(on?';opacity:.55':'')+'">'
+                + '<div style="min-width:0"><div style="font-size:15px;font-weight:500;overflow:hidden;'
+                + 'text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</div>'
                 + '<div class="rdate">'+(r.role?esc(r.role)+' · ':'')+fmt(r.rate)+' / өдөр</div></div>'
-                + '<button class="small" onclick="importWorker(\''+r.id+'\')">Нэмэх</button></div>';
+                + (on
+                    ? '<span class="small" style="flex:none;border-color:#BBD4C4;color:var(--good);'
+                      + 'pointer-events:none">✓ Нэмэгдсэн</span>'
+                    : '<button class="small" style="flex:none" onclick="importWorker(\''+r.id+'\')">'
+                      + 'Нэмэх</button>')
+                + '</div>';
             });
           }
           h += '</div>';
@@ -2045,12 +2056,9 @@ function importWorker(rid){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const r = roster.find(x=>x.id===rid); if(!r) return;
   j.workers = j.workers || [];
-  if(j.workers.some(w => w.rid === r.id || w.name === r.name)){
-    alert(r.name + ' энэ ажилд аль хэдийн нэмэгдсэн байна.');
-    pickOpen = false; render(); return;
-  }
+  if(j.workers.some(w => w.rid === r.id || w.name === r.name)){ render(); return; }
   j.workers.push({id: uid(), rid: r.id, name: r.name, rate: r.rate||0, role: r.role||''});
-  pickOpen = false; tab = 'labor'; save(); render();
+  save(); render();
 }
 
 function typesView(){
