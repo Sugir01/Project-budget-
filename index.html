@@ -13,7 +13,7 @@
 <title>Смарт Солгрид ХХК</title>
 <style>
 :root{
-  --bg:#E9ECE8; --surface:#fff; --ink:#1B2A33; --muted:#6C7A80;
+  --bg:#E9ECE8; --surface:#fff; --ink:#1B2A33; --muted:#5E6B70;
   --line:#D5DBD5; --good:#2F6B4F; --bad:#B33A2B; --blue:#2A5F7A;
   --asset:#8A6A1F; --track:#DCE2DC;
 }
@@ -25,7 +25,7 @@ body{
   padding-top:env(safe-area-inset-top);
   -webkit-tap-highlight-color:transparent;
 }
-#app{max-width:560px;margin:0 auto;padding:20px 16px 70px}
+#app{max-width:560px;margin:0 auto;padding:16px 16px 112px}
 button{font-family:inherit}
 input{
   width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--line);
@@ -78,7 +78,8 @@ input:focus{border-color:var(--ink)}
 .ramt{font-weight:600;white-space:nowrap}
 .tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#F4EEDC;
   color:var(--asset);font-size:11px;font-weight:600;vertical-align:1px}
-.x{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px 6px}
+.x{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px 6px;
+  min-width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .empty{background:var(--surface);border-radius:12px;padding:28px 20px;text-align:center;color:var(--muted);margin-bottom:14px}
 .note{color:var(--muted);font-size:14px;padding:6px 2px}
 .tools{display:flex;gap:8px;margin-top:26px;justify-content:center}
@@ -90,9 +91,9 @@ input:focus{border-color:var(--ink)}
 .total{display:flex;justify-content:space-between;align-items:center;background:#F4EEDC;
   border-radius:10px;padding:13px 15px;margin-bottom:12px}
 .total b{font-size:18px;color:var(--asset)}
-.small{background:none;border:1px solid var(--line);border-radius:7px;color:var(--muted);
-  font-size:12.5px;padding:6px 10px;cursor:pointer;white-space:nowrap}
-.small.warn{color:var(--bad);border-color:#EBD2CE}
+.small{background:none;border:1px solid var(--line);border-radius:8px;color:var(--muted);
+  font-size:13px;padding:8px 12px;cursor:pointer;white-space:nowrap;font-family:inherit}
+.small.warn{color:var(--bad);border-color:#EBD2CE;background:none;margin-top:0;padding:8px 12px;font-size:13px;line-height:normal;border-radius:8px}
 .jobtag{font-size:11.5px;color:var(--muted);margin-top:3px}
 .off{opacity:.55}
 .off .rdesc{text-decoration:line-through}
@@ -105,8 +106,10 @@ input:focus{border-color:var(--ink)}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);padding:8px 10px 0}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}
-.chip{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:16px;
-  padding:6px 11px;font-size:13px;cursor:pointer}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;
+  display:inline-flex;align-items:center;min-height:38px;padding:0 13px;font-size:13.5px;cursor:pointer;font-family:inherit}
+.chip .cd{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex:none}
+.chip.on .cd{box-shadow:0 0 0 1.5px #fff}
 .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .inf{background:#F2F5F1;border-radius:10px;padding:12px;margin-bottom:10px}
 .inf input,.inf textarea{margin-bottom:8px}
@@ -186,6 +189,124 @@ input[type=range]{width:100%;accent-color:var(--blue);padding:0;border:none;back
 .navbtn{display:flex;justify-content:space-between;align-items:center;width:100%;
   background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
   margin-bottom:10px;cursor:pointer;font-size:15px;font-weight:600;color:inherit}
+
+/* ---- шинэ загвар ---- */
+.apphd{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.apphd img{width:38px;height:38px;border-radius:10px;object-fit:contain;background:#fff;flex:none}
+.apphd .t{font-size:17px;font-weight:700;line-height:1.15}
+.apphd .u{font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hero .hbig{font-size:30px;font-weight:700;letter-spacing:-.01em;margin:2px 0 2px}
+.hmore{background:none;border:none;color:#fff;font-size:13px;font-weight:500;min-height:36px;padding:0;cursor:pointer;font-family:inherit}
+.sechd{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:20px 0 10px}
+.sechd h2{margin:0;font-size:18px;font-weight:700}
+.btn.sm{width:auto;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 16px;border-radius:12px;font-size:14.5px;font-weight:500}
+.fchips{display:flex;gap:8px;overflow-x:auto;white-space:nowrap;margin:0 -16px 12px;padding:0 16px;scrollbar-width:none}
+.fchips::-webkit-scrollbar{display:none}
+.fchip{flex:none;display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:0 13px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:13.5px;cursor:pointer;font-family:inherit}
+.fchip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.fchip i{width:8px;height:8px;border-radius:50%;flex:none}
+.fchip.on i{box-shadow:0 0 0 1.5px #fff}
+.st{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap;flex:none}
+.st i{width:7px;height:7px;border-radius:50%}
+.st.s-ok{background:#E3EFE7;color:#2A5F45} .st.s-ok i{background:#3E8A63}
+.st.s-warn{background:#FBF0D9;color:#7A4F00} .st.s-warn i{background:#C98A0B}
+.st.s-bad{background:#FBE9E6;color:#A3301F} .st.s-bad i{background:#C9412F}
+.st.s-done{background:#E4EAE6;color:var(--good)} .st.s-done i{background:var(--good)}
+.jc{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;margin-bottom:10px;cursor:pointer;color:inherit;font-family:inherit;font-size:inherit}
+.jc:active{background:#F7F9F6}
+.jc .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.jc .nm{font-size:16px;font-weight:700;line-height:1.3}
+.jc .dt{font-size:12.5px;color:var(--muted);margin-top:3px}
+.n2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.n2 .l{font-size:12px;color:var(--muted)}
+.n2 .v{font-size:17px;font-weight:700;margin-top:2px}
+.n2 .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+.n2 .s b{color:var(--ink);font-weight:600}
+.mbar{position:relative;height:6px;border-radius:3px;background:var(--track);margin-top:14px}
+.mbar>i{display:block;height:100%;border-radius:3px;background:var(--blue)}
+.mbar>.mk{position:absolute;top:-3px;width:2px;height:12px;border-radius:1px;background:var(--ink);transform:translateX(-1px)}
+.mline{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--muted);margin-top:7px}
+.mline b{color:var(--ink)}
+.mrow{width:100%;min-height:54px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 10px 0 16px;
+  background:none;border:none;border-bottom:1px solid #EEF1ED;color:var(--ink);font-size:15px;font-weight:500;cursor:pointer;
+  font-family:inherit;text-align:left}
+.mrow:last-child{border-bottom:none}
+.mrow .r{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:13.5px;font-weight:400}
+.lrows{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:12px}
+.bnav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom)}
+.bnav .in{max-width:560px;margin:0 auto;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:6px 4px 8px}
+.bnav button{display:flex;flex-direction:column;align-items:center;gap:3px;min-height:52px;padding:4px 0;background:none;
+  border:none;color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit}
+.bnav .ic{display:flex;align-items:center;justify-content:center;width:56px;height:30px;border-radius:15px}
+.bnav button.on{color:var(--ink);font-weight:700}
+.bnav button.on .ic{background:#E3E8E4}
+.fab{position:fixed;right:max(16px, calc((100vw - 560px) / 2 + 16px));bottom:calc(86px + env(safe-area-inset-bottom));
+  width:58px;height:58px;border-radius:50%;border:none;background:var(--ink);color:#fff;display:flex;align-items:center;
+  justify-content:center;box-shadow:0 6px 18px rgba(27,42,51,.32);cursor:pointer;z-index:21}
+.sheetbg{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(27,42,51,.5);z-index:30}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:31;background:var(--surface);border-radius:22px 22px 0 0;
+  padding:10px 16px calc(20px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto;max-height:86vh;overflow-y:auto;
+  box-shadow:0 -8px 24px rgba(27,42,51,.18)}
+.sheet .grab{width:40px;height:4px;border-radius:2px;background:#C9D1CA;margin:0 auto}
+.sheet h2{margin:14px 0 2px;font-size:19px}
+.opt{display:flex;align-items:center;gap:14px;width:100%;min-height:68px;padding:11px 10px 11px 12px;border:1px solid var(--line);
+  border-radius:14px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;margin-top:10px;font-family:inherit}
+.opt .oi{flex:none;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.opt .ot{display:block;font-size:16px;font-weight:700}
+.opt .od{display:block;font-size:13px;color:var(--muted);margin-top:2px}
+.jhd{background:var(--surface);margin:-16px -16px 0;padding:4px 16px 10px}
+.jhd .bk{display:inline-flex;align-items:center;gap:2px;height:44px;padding:0 8px 0 0;margin-left:-6px;background:none;border:none;
+  color:var(--muted);font-size:15px;cursor:pointer;font-family:inherit}
+.jhd h1{margin:0;font-size:21px;font-weight:700;line-height:1.25}
+.jhd .tg{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.jtabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;box-shadow:0 calc(-1 * env(safe-area-inset-top,0px)) 0 0 var(--surface);background:var(--surface);margin:0 -16px 14px;border-bottom:1px solid var(--line);
+  display:flex;gap:2px;padding:0 8px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+.jtabs::-webkit-scrollbar{display:none}
+.jtabs button{flex:none;height:46px;padding:0 12px;background:none;border:none;border-bottom:3px solid transparent;color:var(--muted);
+  font-size:14.5px;font-weight:500;cursor:pointer;font-family:inherit}
+.jtabs button.on{border-bottom-color:var(--ink);color:var(--ink);font-weight:700}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.tile .l{font-size:12.5px;color:var(--muted)}
+.tile .v{font-size:19px;font-weight:700;margin-top:4px}
+.tile .s{font-size:12px;color:var(--muted);margin-top:8px;padding-top:7px;border-top:1px solid #EEF1ED}
+.tile .s b{display:block;font-size:13.5px;font-weight:600;margin-top:1px;color:var(--ink)}
+.tile .s b.neg{color:var(--bad)}
+.alert{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.45}
+.alert svg{flex:none;margin-top:1px}
+.alert b{display:block;font-size:14px;margin-bottom:2px}
+.alert.a-warn{background:#FBF0D9;color:#6E4800}
+.alert.a-bad{background:#FBE9E6;color:#8E2A1E}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 10px}
+.facts .l{font-size:12px;color:var(--muted)}
+.facts .v{font-size:15.5px;font-weight:700;margin-top:2px}
+.facts .e{font-size:12px;color:var(--blue);font-weight:500;margin-left:6px}
+.fl{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 5px}
+.lhd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:18px 2px 8px}
+.lhd h2{margin:0;font-size:16px;font-weight:700}
+.lhd span{font-size:13px;color:var(--muted)}
+.lhd span b{color:var(--ink)}
+.erow{display:flex;align-items:center;gap:12px;padding:8px 2px 8px 14px;border-bottom:1px solid #EEF1ED}
+.erow:last-child{border-bottom:none}
+.erow .dot{flex:none;width:10px;height:10px;border-radius:50%}
+.erow .bd{flex:1;min-width:0}
+.erow .bd.tap{cursor:pointer}
+.erow .ds{font-size:15px;font-weight:500;overflow-wrap:anywhere}
+.erow .mt{font-size:12.5px;color:var(--muted);margin-top:2px}
+.erow .am{font-size:15px;font-weight:700;white-space:nowrap}
+.erow.asset{background:#FCFAF4}
+.ecat{padding:2px 14px 12px;border-bottom:1px solid #EEF1ED;background:#F7F9F6}
+.lnk{background:none;border:none;color:var(--blue);font-size:13.5px;font-weight:500;min-height:40px;padding:0 0 0 10px;
+  cursor:pointer;font-family:inherit;white-space:nowrap}
+.rmini{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:56px;padding:6px 8px 6px 16px;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;cursor:pointer;color:inherit;
+  font-family:inherit;font-size:inherit;text-align:left}
+.srch{display:flex;align-items:center;gap:8px;height:46px;padding:0 12px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;color:var(--muted);margin-bottom:12px}
+.srch input{flex:1;min-width:0;height:100%;border:none;padding:0;background:transparent;font-size:15.5px}
 </style>
 </head>
 <body>
@@ -237,6 +358,7 @@ let openDone = {};
 let bonPick = {};
 let lastW = '', lastT = '', lastD = '';
 let expFilter = '';
+let heroOpen = false, jobFilter = '', openCat = false;
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
 const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
@@ -630,6 +752,256 @@ const wageDue = j => Math.max(0, wageAccrued(j) - wagePaid(j));
 const wageDueAll = arr => arr.reduce((s,j)=>s+wageDue(j), 0);
 const SUBL = 'Олгоогүй цалин хассан';
 
+// ---------- шинэ загварын туслахууд ----------
+const svgI = (d, sz, sw) => '<svg width="'+(sz||22)+'" height="'+(sz||22)+'" viewBox="0 0 24 24" fill="none" '
+  + 'stroke="currentColor" stroke-width="'+(sw||1.9)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+const IC = {
+  back: svgI('<path d="M15 18l-6-6 6-6"/>', 22, 2),
+  chev: svgI('<path d="M9 6l6 6-6 6"/>', 18, 2),
+  plus: svgI('<path d="M12 5v14M5 12h14"/>', 18, 2.2),
+  plusBig: svgI('<path d="M12 5v14M5 12h14"/>', 26, 2.2),
+  jobs: svgI('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/>'),
+  users: svgI('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2c2.1.7 3.5 2.8 3.5 5.8"/>'),
+  box: svgI('<path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/>'),
+  grid: svgI('<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>'),
+  receipt: svgI('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 8h6M9 12h6"/>', 24),
+  income: svgI('<circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 13l4 4 4-4"/>', 24),
+  cal: svgI('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15.5l2 2 4-4"/>', 24),
+  warn: svgI('<path d="M12 3l10 18H2L12 3zM12 10v5M12 18v.5"/>', 20, 2),
+  search: svgI('<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>', 18, 2),
+  dots: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>'
+};
+const shortDate = d => !d ? '' : (d.slice(0,4) === today().slice(0,4) ? d.slice(5).replace('-','/') : d);
+const jobDates = j => (j.startDate && j.endDate)
+  ? shortDate(j.startDate)+' → '+shortDate(stopDays(j) > 0 ? dstr(effEnd(j)) : j.endDate) : '';
+
+// ажлын төлөв — зөвхөн одоо байгаа тооцоог ашиглаж ангилна
+function jobStatus(j){
+  if(j.done) return {k:'s-done', t:'Дууссан', g:'done'};
+  const pr = jobProgress(j), tp = timePct(j), dl = daysLeft(j), sp = spentPct(j), lag = lagOf(j);
+  const behind = tp === null ? 0 : tp - pr;
+  if(dl !== null && dl < 0 && pr < 100) return {k:'s-bad', t:'Хугацаа хэтэрсэн', g:'bad'};
+  if(sp > 100) return {k:'s-bad', t:'Төсөв хэтэрсэн', g:'bad'};
+  if(behind >= 25) return {k:'s-bad', t:'Хоцорсон', g:'bad'};
+  if(behind >= 10 || lag >= 10) return {k:'s-warn', t:'Анхаарах', g:'warn'};
+  return {k:'s-ok', t:'Хэвийн', g:'ok'};
+}
+const stChip = st => '<span class="st '+st.k+'"><i></i>'+st.t+'</span>';
+
+function navCur(){
+  if(openId && jobs.some(j=>j.id===openId)) return view === 'list' ? 'list' : 'more';
+  if(['assets','types','done','more'].indexOf(view) >= 0) return 'more';
+  if(view === 'roster') return 'roster';
+  if(view === 'stock' && canMat()) return 'stock';
+  return 'list';
+}
+function bottomNav(){
+  const cur = navCur();
+  const b = (k, label, ic) => '<button class="'+(cur===k?'on':'')+'"'+(cur===k?' aria-current="page"':'')
+    + ' onclick="goNav(\''+k+'\')"><span class="ic">'+ic+'</span>'+label+'</button>';
+  return '<nav class="bnav" aria-label="Үндсэн цэс"><div class="in">'
+    + b('list', 'Ажлууд', IC.jobs) + b('roster', 'Ажилчид', IC.users)
+    + (canMat() ? b('stock', 'Материал', IC.box) : '')
+    + b('more', 'Бусад', IC.grid) + '</div></nav>';
+}
+function goNav(k){
+  openId = null; view = k; ui = {}; newJob = false; editContract = false; pickOpen = false;
+  render();
+  try{ window.scrollTo(0, 0); }catch(e){}
+}
+function setTab(k){
+  tab = k; ui = {};
+  render();
+  const hd = document.querySelector('.jhd');
+  if(hd){
+    const y = hd.offsetTop + hd.offsetHeight;
+    if(window.scrollY > y){ try{ window.scrollTo(0, y); }catch(e){} }
+  }
+}
+function quick(k){
+  if(k === 'labor' && !lastD) lastD = today();
+  setTab(k);
+  if(k === 'exp' || k === 'inc'){
+    const el = document.getElementById('eDesc');
+    if(el){ try{ el.focus(); }catch(e){} }
+  }
+}
+function quickSheet(j){
+  const opt = (bg, col, ic, t, d, fn) => '<button class="opt" onclick="'+fn+'">'
+    + '<span class="oi" style="background:'+bg+';color:'+col+'">'+ic+'</span>'
+    + '<span style="flex:1;min-width:0"><span class="ot">'+t+'</span><span class="od">'+d+'</span></span>'
+    + '<span style="color:var(--muted);flex:none;display:flex">'+IC.chev+'</span></button>';
+  let h = '<div class="sheetbg" onclick="ui={};render()"></div>'
+    + '<section class="sheet" role="dialog" aria-label="Бүртгэл нэмэх"><div class="grab"></div>';
+  if(ui.sheet === 'mat'){
+    const it = ui.sItem ? stock.find(x=>x.id===ui.sItem) : null;
+    h += '<h2>Материал гаргах</h2><div class="sub">'+esc(j.name)+' — ажлын зардалд бүртгэгдэнэ</div>';
+    if(it){
+      h += '<div style="font-weight:700;font-size:16px;margin-top:14px">'+esc(it.name)+'</div>' + moveForm(it, 'job', j.id);
+    } else {
+      const L = stock.filter(x=>stockLeft(x) > 0);
+      if(!L.length) h += '<div class="note">Үлдэгдэлтэй материал алга.</div>';
+      L.forEach(x => {
+        h += opt('#F4EEDC', '#7A5C14', IC.box, esc(x.name),
+          'Үлдэгдэл '+nd(stockLeft(x))+' ш · өртөг '+fmt(x.cost||0),
+          "ui={sheet:'mat',sItem:'"+x.id+"'};render()");
+      });
+      h += '<button class="btn ghost" style="width:100%;margin-top:14px;min-height:48px" onclick="ui={sheet:1};render()">Буцах</button>';
+    }
+  } else {
+    h += '<h2>Юу бүртгэх вэ?</h2><div class="sub">'+esc(j.name)+'</div>'
+      + opt('#FBE9E6', '#B33A2B', IC.receipt, 'Зардал', 'Материал, шатахуун, түрээс, хоол', "quick('exp')")
+      + opt('#E6ECEF', '#2A5F7A', IC.income, 'Орлого', 'Захиалагчаас орсон төлбөр', "quick('inc')")
+      + opt('#E3EFE7', '#2F6B4F', IC.cal, 'Ирц бүртгэх', 'Ажилласан хүмүүсээ сонгох', "quick('labor')")
+      + (canMat() && stock.some(x=>stockLeft(x) > 0)
+          ? opt('#F4EEDC', '#7A5C14', IC.box, 'Материал гаргах', 'Агуулахаас энэ ажилд', "ui={sheet:'mat'};render()")
+          : '')
+      + '<button class="btn ghost" style="width:100%;margin-top:14px;min-height:48px" onclick="ui={};render()">Болих</button>';
+  }
+  return h + '</section>';
+}
+
+function jobCard(j, st){
+  const s = spent(j), cb = j.contract - s, ib = earned(j) - s, wd = wageDue(j);
+  const pr = jobProgress(j), tp = timePct(j), dl = daysLeft(j), sp = spentPct(j);
+  const t = typeOf(j.type), dates = jobDates(j);
+  const num2 = (l, v) => '<div><div class="l">'+l+'</div><div class="v '+(v<0?'neg':'pos')+'">'+fmt(v)+'</div>'
+    + (wd > 0 ? '<div class="s">цалингийн дараа <b>'+fmt(v - wd)+'</b></div>' : '') + '</div>';
+  return '<button class="jc" onclick="openJob(\''+j.id+'\')">'
+    + '<div class="top"><div style="min-width:0"><div class="nm">'+esc(j.name)+'</div>'
+    + '<div class="dt">'+[t ? t.t : '', dates].filter(Boolean).join(' · ')+'</div></div>'+stChip(st)+'</div>'
+    + '<div class="n2">'+num2('Гэрээний үлдэгдэл', cb)+num2('Бэлэн мөнгө', ib)+'</div>'
+    + '<div class="mbar"><i style="width:'+Math.min(pr,100)+'%"></i>'
+    + (tp !== null ? '<span class="mk" style="left:'+tp+'%"></span>' : '')+'</div>'
+    + '<div class="mline"><span>Гүйцэтгэл <b>'+Math.round(pr)+'%</b> · Төсөв <b>'+Math.round(sp)+'%</b></span>'
+    + (dl !== null
+        ? '<span'+(st.g === 'bad' ? ' style="color:var(--bad);font-weight:500"' : '')+'>'
+          + (dl >= 0 ? dl+' хоног үлдсэн' : (-dl)+' хоног хэтэрсэн')+'</span>'
+        : '')
+    + '</div></button>';
+}
+
+function moreView(){
+  const done = jobs.filter(j=>j.done);
+  const allA = jobs.reduce((s,j)=>s+assetVal(j),0);
+  const row = (label, right, fn, col) => '<button class="mrow" onclick="'+fn+'"><span>'+label+'</span>'
+    + '<span class="r"'+(col ? ' style="color:'+col+'"' : '')+'>'+right+IC.chev+'</span></button>';
+  let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Бусад</h2></div><div class="lrows">';
+  if(isAdmin()) h += row('Үндсэн хөрөнгө', fmt(allA), "view='assets';ui={};render()", 'var(--asset)');
+  if(isAdmin()) h += row('Ажлын төрлөөр', 'Угсралт / Зураг төсөл', "view='types';ui={};render()");
+  h += row('Дууссан ажил', done.length+' ажил', "view='done';ui={};render()");
+  h += '</div>';
+  h += '<div class="card"><div class="mlabel">Нэвтэрсэн</div>'
+    + '<div style="font-weight:600;margin-top:2px;overflow-wrap:anywhere">'+esc(me)+'</div>'
+    + '<div class="sub">'+(isAdmin() ? 'Эзэн' : (canMat() ? 'Инженер · материалын эрхтэй' : 'Инженер'))+'</div>'
+    + '<button class="btn ghost" style="margin-top:12px;min-height:44px" onclick="logout()">Гарах</button></div>';
+  h += '<div class="tools" style="margin-top:14px"><button onclick="exportData()">Өгөгдөл хуулах</button>'
+     + '<button onclick="ui={imp:1};render()">Сэргээх</button></div>';
+  if(ui.exp){
+    h += '<div class="inf" style="margin-top:10px">'
+      + '<div class="rdate" style="margin-bottom:6px">Доорх текстийг сонгож хуулж аваарай:</div>'
+      + '<textarea readonly>'+esc(ui.exp)+'</textarea>'
+      + '<div class="btns"><button class="btn ghost" onclick="ui={};render()">Хаах</button></div></div>';
+  }
+  if(ui.imp){
+    h += '<div class="inf" style="margin-top:10px">'
+      + '<textarea id="impBox" placeholder="Өмнө хуулсан өгөгдлөө энд буулгана уу"></textarea>'
+      + '<div class="btns"><button class="btn" onclick="importData()">Сэргээх</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  }
+  return h;
+}
+
+const tile = (l, v, wd) => '<div class="tile"><div class="l">'+l+'</div>'
+  + '<div class="v '+(v<0?'neg':'pos')+'">'+fmt(v)+'</div>'
+  + (wd > 0 ? '<div class="s">Цалингийн дараа<b class="'+(v-wd<0?'neg':'')+'">'+fmt(v-wd)+'</b></div>' : '')
+  + '</div>';
+const fact = (l, v) => '<div><div class="l">'+l+'</div><div class="v">'+v+'</div></div>';
+
+function statusAlert(j){
+  if(j.done) return '';
+  const pr = jobProgress(j), tp = timePct(j), dl = daysLeft(j), sp = spentPct(j);
+  const A = (cls, t, d) => '<div class="alert '+cls+'">'+IC.warn+'<div><b>'+t+'</b>'+d+'</div></div>';
+  let h = '';
+  if(dl !== null && dl < 0 && pr < 100){
+    h += A('a-bad', 'Хугацаа хэтэрсэн', 'Гэрээний хугацаа '+(-dl)+' хоногоор хэтэрсэн, гүйцэтгэл '+Math.round(pr)+'%.');
+  } else if(tp !== null && tp - pr >= 10){
+    h += A(tp - pr >= 25 ? 'a-bad' : 'a-warn', 'Хоцорч байна',
+      'Хугацааны '+Math.round(tp)+'% өнгөрсөн, гүйцэтгэл '+Math.round(pr)+'%.'
+      + (dl !== null ? ' Дуусахад '+dl+' хоног үлдсэн.' : ''));
+  }
+  if(sp > 100) h += A('a-bad', 'Төсөв хэтэрсэн', 'Зардал гэрээний дүнгийн '+Math.round(sp)+'%-д хүрсэн.');
+  return h;
+}
+
+function factsCard(j){
+  const s = spent(j), e = earned(j), av = assetVal(j);
+  let h = '<div class="card"><div class="facts">';
+  if(editContract){
+    h += '<div style="grid-column:1 / -1"><div class="l">Гэрээний дүн</div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px">'
+      + '<input id="cEdit" inputmode="numeric" oninput="liveNum(this)" value="'+group(j.contract)+'" style="flex:1;min-width:0">'
+      + '<button class="btn" style="width:auto;padding:0 18px" onclick="saveContract()">OK</button>'
+      + '<button class="btn ghost" onclick="editContract=false;render()">Болих</button></div></div>';
+  } else {
+    h += '<div><div class="l">Гэрээний дүн</div><div class="v" style="cursor:pointer" onclick="editContract=true;render()">'
+      + fmt(j.contract)+'<span class="e">засах</span></div></div>';
+  }
+  if(ui.dates){
+    h += '<div style="grid-column:1 / -1"><div class="l">Хугацаа (эхлэх → дуусах)</div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px">'
+      + '<input id="edStart" type="date" value="'+(j.startDate||'')+'" style="min-width:0">'
+      + '<input id="edEnd" type="date" value="'+(j.endDate||'')+'" style="min-width:0"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px">'
+      + '<button class="btn" style="width:auto;padding:10px 18px" onclick="saveDates()">Хадгалах</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  } else {
+    h += '<div><div class="l">Хугацаа</div><div class="v" style="cursor:pointer;font-size:14.5px" onclick="ui={dates:1};render()">'
+      + (jobDates(j) || 'оруулах')+'<span class="e">засах</span></div>'
+      + (stopDays(j) > 0 ? '<div class="rdate">Гэрээ '+j.endDate+' · +'+stopDays(j)+' хоног</div>' : '')+'</div>';
+  }
+  h += fact('Орсон орлого', fmt(e)) + fact('Нийт зардал', fmt(s)) + fact('Үндсэн хөрөнгө', fmt(av))
+    + fact('Хүн өдөр', nd(manDays(j))+' <span style="font-size:12.5px;font-weight:400;color:var(--muted)">· '
+      + workDays(j)+' өдөр</span>');
+  return h + '</div></div>';
+}
+
+function catSect(j){
+  if(j.expenses.length === 0) return '';
+  const tot = spent(j);
+  let top = null;
+  CATS.forEach(c => {
+    const v = j.expenses.filter(e=>catOf(e.cat).k===c.k).reduce((t,e)=>t+e.amount, 0);
+    if(!top || v > top.v) top = {t:c.t, v:v};
+  });
+  return '<div class="sect"><button class="hd" onclick="openCat=!openCat;render()">'
+    + '<span>Зардлын бүтэц'+(top && tot > 0 ? ' <span class="cnt">· '+top.t+' '+Math.round(top.v/tot*100)+'%</span>' : '')+'</span>'
+    + '<span class="arw'+(openCat?' op':'')+'">›</span></button>'
+    + (openCat ? '<div class="bd">'+catCard(j, true)+'</div>' : '') + '</div>';
+}
+
+function settingsCard(j){
+  return '<div class="card">'
+    + '<div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Ажлын төрөл</div>'
+    + '<div class="chips" style="margin:0 0 4px">' + TYPES.map(t =>
+        '<button class="chip'+(j.type===t.k?' on':'')+'" onclick="setType(\''+t.k+'\')">'+t.t+'</button>').join('') + '</div>'
+    + '<label class="check" style="margin:8px 0 0;min-height:44px;padding-top:8px;border-top:1px solid var(--line)">'
+    + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>Ажил дууссан</label>'
+    + (j.createdBy && j.createdBy !== j.owner
+        ? '<div class="rdate" style="margin-top:6px">Үүсгэсэн: '+esc(j.createdBy)+'</div>' : '')
+    + memberBox(j) + '</div>';
+}
+
+function toggleECat(id){ ui = (ui.eCat === id) ? {} : {eCat: id}; render(); }
+function toggleRMenu(id){ ui = (ui.rMenu === id) ? {} : {rMenu: id}; render(); }
+function filterRoster(q){
+  q = String(q||'').toLowerCase().trim();
+  document.querySelectorAll('[data-q]').forEach(el => {
+    el.style.display = (!q || el.getAttribute('data-q').indexOf(q) >= 0) ? '' : 'none';
+  });
+}
+
+
 function render(){
   if(!window.FB){ document.getElementById('app').innerHTML =
     '<div class="note" style="padding:40px 0;text-align:center">Ачаалж байна…</div>'; return; }
@@ -644,9 +1016,22 @@ function render(){
   else if(view === 'types' && isAdmin()) html = typesView();
   else if(view === 'roster') html = rosterView();
   else if(view === 'stock' && canMat()) html = stockView();
+  else if(view === 'more') html = moreView();
   else html = listView();
+  html += bottomNav();
+  if(job && !job.done){
+    html += '<button class="fab" aria-label="Бүртгэл нэмэх" onclick="ui={sheet:1};render()">'+IC.plusBig+'</button>';
+  }
+  if(job && ui.sheet) html += quickSheet(job);
   document.getElementById('app').innerHTML = html;
   document.querySelectorAll('.chartscroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
+  const at = document.querySelector('.jtabs .on');
+  if(at){
+    const pn = at.parentNode;
+    if(at.offsetLeft + at.offsetWidth > pn.scrollLeft + pn.clientWidth || at.offsetLeft < pn.scrollLeft){
+      pn.scrollLeft = Math.max(0, at.offsetLeft - 24);
+    }
+  }
 }
 
 function listView(){
@@ -657,12 +1042,11 @@ function listView(){
   const tE = active.reduce((s,j)=>s+earned(j),0);
   const tA = active.reduce((s,j)=>s+assetVal(j),0);
   const tW = active.reduce((s,j)=>s+workDays(j),0);
-  const allA = jobs.reduce((s,j)=>s+assetVal(j),0);
   const tW2 = wageDueAll(active);
 
-  let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">'
-    + '<span style="font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-    + esc(me)+'</span><button class="small" onclick="logout()">Гарах</button></div>';
+  let h = '<div class="apphd"><img src="icon-192.png" alt="">'
+    + '<div style="min-width:0"><div class="t">Смарт Солгрид</div>'
+    + '<div class="u">'+esc(me)+' · '+(isAdmin() ? 'эзэн' : 'инженер')+'</div></div></div>';
 
   if(syncErr){
     h += '<div class="warn" style="margin:0 0 12px">Сервертэй холбогдоход алдаа гарлаа ('+esc(syncErr)
@@ -679,47 +1063,41 @@ function listView(){
       + '<button class="btn" onclick="migrateLocal()">Сервер рүү шилжүүлэх</button></div>';
   }
 
-  h += '<div class="hero"><div style="font-size:13px;opacity:.6">Явагдаж буй ажлуудын нэгдсэн дүн</div>'
-    + '<div class="pairs">' + pair('Гэрээнээс гарах ашиг', tC-tS, tW2>0?{label:SUBL, value:tC-tS-tW2}:null)
-    + pair('Орлогоос гарсан баланс', tE-tS, tW2>0?{label:SUBL, value:tE-tS-tW2}:null) + '</div>'
-    + '<div class="meta">'
-    + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(tC)+'</div></div>'
-    + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(tE)+'</div></div>'
-    + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(tS)+'</div></div>'
-    + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(tA)+'</div></div>'
-    + (tW>0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+tW+'</div></div>' : '')
-    + '</div></div>';
-
-  const allInc = [], allExp = [];
-  active.forEach(j=>{ allInc.push(...j.incomes); allExp.push(...j.expenses); });
-  h += chartSvg({incomes: allInc, expenses: allExp});
-
-  if(isAdmin()){
-    h += '<button class="navbtn" onclick="view=\'assets\';render()">'
-      + '<span>Үндсэн хөрөнгө</span><span style="color:var(--asset)">'+fmt(allA)+' ›</span></button>';
+  // гол 3 тоо
+  h += '<div class="hero" style="margin-bottom:6px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
+    + '<span style="font-size:13px;opacity:.75">Явагдаж буй '+active.length+' ажил</span>'
+    + '<button class="hmore" onclick="heroOpen=!heroOpen;render()">'+(heroOpen ? 'Хураах' : 'Дэлгэрэнгүй ›')+'</button></div>'
+    + '<div style="font-size:12.5px;opacity:.75;margin-top:6px">Гэрээний үлдэгдэл</div>'
+    + '<div class="hbig '+(tC-tS<0?'neg':'pos')+'">'+fmt(tC-tS)+'</div>'
+    + (tW2 > 0 ? '<div style="font-size:12.5px;opacity:.85">Цалингийн дараа <b class="'+(tC-tS-tW2<0?'neg':'pos')+'">'
+        + fmt(tC-tS-tW2)+'</b></div>' : '')
+    + '<div class="pairs">'
+    + '<div class="pair"><div class="plabel">Бэлэн мөнгө</div>'
+    + '<div class="pval '+(tE-tS<0?'neg':'pos')+'">'+fmt(tE-tS)+'</div>'
+    + (tW2 > 0 ? '<div class="psub"><span class="pl">Цалингийн дараа</span><b class="'+(tE-tS-tW2<0?'neg':'pos')+'">'
+        + fmt(tE-tS-tW2)+'</b></div>' : '')+'</div>'
+    + '<div class="pair"><div class="plabel">Олгох цалин</div>'
+    + '<div class="pval" style="color:'+(tW2 > 0 ? '#F4A99C' : '#fff')+'">'+fmt(tW2)+'</div></div></div>';
+  if(heroOpen){
+    h += '<div class="meta">'
+      + '<div><div class="mlabel">Гэрээний дүн</div><div class="mval">'+fmt(tC)+'</div></div>'
+      + '<div><div class="mlabel">Орлого</div><div class="mval">'+fmt(tE)+'</div></div>'
+      + '<div><div class="mlabel">Зардал</div><div class="mval">'+fmt(tS)+'</div></div>'
+      + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(tA)+'</div></div>'
+      + (tW > 0 ? '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+tW+'</div></div>' : '')
+      + '</div>';
+  }
+  h += '</div>';
+  if(heroOpen){
+    const allInc = [], allExp = [];
+    active.forEach(j=>{ allInc.push(...j.incomes); allExp.push(...j.expenses); });
+    h += '<div style="margin-top:12px">'+chartSvg({incomes: allInc, expenses: allExp})+'</div>';
   }
 
-  h += '<button class="navbtn" onclick="view=\'roster\';render()">'
-     + '<span>Ажилчид</span><span style="color:var(--muted)">'+roster.length+' хүн ›</span></button>';
-
-  if(canMat()){
-    const sv = stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0);
-    h += '<button class="navbtn" onclick="view=\'stock\';ui={};render()">'
-      + '<span>Материал</span><span style="color:var(--muted)">'+fmt(sv)+' ›</span></button>';
-  }
-
-  if(isAdmin()){
-    h += '<button class="navbtn" onclick="view=\'types\';render()">'
-      + '<span>Ажлын төрлөөр</span><span style="color:var(--muted)">Угсралт / Зураг төсөл ›</span></button>';
-  }
-  if(done.length > 0){
-    const dp = done.reduce((s,j)=>s+(j.contract-spent(j)),0);
-    h += '<button class="navbtn" onclick="view=\'done\';render()">'
-      + '<span>Дууссан ажил ('+done.length+')</span>'
-      + (isAdmin()
-          ? '<span class="'+(dp<0?'neg':'pos')+'">'+fmt(dp)+' ›</span>'
-          : '<span style="color:var(--muted)">›</span>')+'</button>';
-  }
+  h += '<div class="sechd"><h2>Ажлууд</h2>'
+    + (newJob ? '' : '<button class="btn sm" onclick="newJob=true;render()">'+IC.plus+'Шинэ ажил</button>')
+    + '</div>';
 
   if(newJob){
     h += '<div class="card">'
@@ -734,40 +1112,31 @@ function listView(){
         ).join('') + '</div>'
       + '<div style="display:flex;gap:8px"><button class="btn" onclick="addJob()">Ажил үүсгэх</button>'
       + '<button class="btn ghost" onclick="newJob=false;render()">Болих</button></div></div>';
+  }
+
+  const S = active.map(j => ({j: j, s: jobStatus(j)}));
+  const cnt = g => S.filter(x=>x.s.g===g).length;
+  if(active.length > 1 && (cnt('bad') || cnt('warn'))){
+    if(jobFilter && !cnt(jobFilter)) jobFilter = '';
+    const fc = (g, label, col) => cnt(g)
+      ? '<button class="fchip'+(jobFilter===g?' on':'')+'" onclick="jobFilter=\''+g+'\';render()">'
+        + '<i style="background:'+col+'"></i>'+label+' '+cnt(g)+'</button>'
+      : '';
+    h += '<div class="fchips">'
+      + '<button class="fchip'+(jobFilter===''?' on':'')+'" onclick="jobFilter=\'\';render()">Бүгд · '+active.length+'</button>'
+      + fc('bad', 'Асуудалтай', '#C9412F') + fc('warn', 'Анхаарах', '#C98A0B') + fc('ok', 'Хэвийн', '#3E8A63')
+      + '</div>';
   } else {
-    h += '<button class="btn" onclick="newJob=true;render()">+ Шинэ ажил</button>';
+    jobFilter = '';
   }
 
-  if(active.length>0) h += '<div class="secttl" style="margin:24px 0 10px">Явагдаж буй ажил</div>';
-  if(active.length===0 && !newJob) h += '<div class="empty" style="margin-top:14px">Явагдаж буй ажил алга. Шинэ ажил үүсгэнэ үү.</div>';
+  if(active.length===0 && !newJob) h += '<div class="empty">Явагдаж буй ажил алга. Шинэ ажил үүсгэнэ үү.</div>';
+  S.filter(x => !jobFilter || x.s.g === jobFilter).forEach(x => { h += jobCard(x.j, x.s); });
 
-  active.forEach(j=>{
-    const s = spent(j), cb = j.contract - s, ib = earned(j) - s, av = assetVal(j), wd = wageDue(j);
-    const pct = j.contract>0 ? Math.min(s/j.contract*100,100) : 0;
-    h += '<button class="jobcard" onclick="openJob(\''+j.id+'\')">'
-      + '<div class="jname">'+esc(j.name)+typeTag(j)+(lagOf(j)>=10?'<span class="wtag">анхаар</span>':'')+'</div>'
-      + '<div class="pairs">'+pair('Гэрээний баланс',cb, wd>0?{label:SUBL, value:cb-wd}:null)
-      + pair('Орлогын баланс',ib, wd>0?{label:SUBL, value:ib-wd}:null)+'</div>'
-      + progBars(j)
-      + '<div class="sub">Гэрээ '+fmt(j.contract)+' · Орлого '+fmt(earned(j))+' · Зардал '+fmt(s)
-      + (av>0 ? '<br>Үүнээс үндсэн хөрөнгө '+fmt(av) : '')
-      + (manDays(j)>0 ? '<br>Ажилласан өдөр: '+workDays(j)+' · Хүн өдөр: '+nd(manDays(j)) : '') + '</div>'
-      + '</button>';
-  });
-
-  h += '<div class="tools"><button onclick="exportData()">Өгөгдөл хуулах</button>'
-     + '<button onclick="ui={imp:1};render()">Сэргээх</button></div>';
-  if(ui.exp){
-    h += '<div class="inf" style="margin-top:10px">'
-      + '<div class="rdate" style="margin-bottom:6px">Доорх текстийг сонгож хуулж аваарай:</div>'
-      + '<textarea readonly>'+esc(ui.exp)+'</textarea>'
-      + '<div class="btns"><button class="btn ghost" onclick="ui={};render()">Хаах</button></div></div>';
-  }
-  if(ui.imp){
-    h += '<div class="inf" style="margin-top:10px">'
-      + '<textarea id="impBox" placeholder="Өмнө хуулсан өгөгдлөө энд буулгана уу"></textarea>'
-      + '<div class="btns"><button class="btn" onclick="importData()">Сэргээх</button>'
-      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  if(done.length){
+    h += '<button class="mrow" style="border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-top:4px" '
+      + 'onclick="view=\'done\';ui={};render()"><span>Дууссан ажил</span>'
+      + '<span class="r">'+done.length+' ажил'+IC.chev+'</span></button>';
   }
   return h;
 }
@@ -902,7 +1271,7 @@ function delStop(sid){
   save(); render();
 }
 
-function catCard(j){
+function catCard(j, bare){
   if(j.expenses.length === 0) return '';
   const tot = spent(j);
   // урамшууллыг цалингаас тусгаарлана
@@ -926,7 +1295,7 @@ function catCard(j){
       + 'stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'" transform="rotate(-90 60 60)"></circle>';
     off += len;
   });
-  let h = '<div class="card" style="margin-bottom:18px"><div style="font-weight:600;margin-bottom:10px">Зардлын бүтэц</div>'
+  let h = (bare ? '<div>' : '<div class="card" style="margin-bottom:18px"><div style="font-weight:600;margin-bottom:10px">Зардлын бүтэц</div>')
     + '<div style="display:flex;gap:14px;align-items:center">'
     + '<svg width="120" height="120" viewBox="0 0 120 120" style="flex:none">'+arcs+'</svg><div style="flex:1;min-width:0">';
   shown.forEach(r => {
@@ -996,70 +1365,44 @@ function chartSvg(j){
 
 function detailView(j){
   const s = spent(j), e = earned(j), av = assetVal(j), wd = wageDue(j);
-  let h = (syncErr ? '<div class="warn" style="margin:0 0 12px">Сервертэй холбогдоход алдаа: '
-      + esc(syncErr)+'</div>' : '')
-    + '<button class="link" onclick="openId=null;editContract=false;render()">← '
-    + (view==='done' ? 'Дууссан ажил' : 'Бүх ажил') + '</button>'
-    + '<div class="card" style="border-radius:14px;padding:18px;margin-bottom:18px">'
-    + '<div style="font-size:20px;font-weight:600">'+esc(j.name)
-    + (j.done ? '<span class="tag" style="background:#E4EAE6;color:var(--good)">дууссан</span>' : '')+'</div>'
-    + '<div class="chips" style="margin:10px 0 0">' + TYPES.map(t =>
-        '<button class="chip'+(j.type===t.k?' on':'')+'" onclick="setType(\''+t.k+'\')">'+t.t+'</button>'
-      ).join('') + '</div>'
-    + '<div class="pairs">'+pair('Гэрээний дүнгээс гарсан баланс', j.contract-s, wd>0?{label:SUBL, value:j.contract-s-wd}:null)
-    + pair('Орлогоос гарсан баланс', e-s, wd>0?{label:SUBL, value:e-s-wd}:null)+'</div>'
-    + '<div class="meta"><div><div class="mlabel">Гэрээний дүн</div>';
-  if(editContract){
-    h += '<div class="h2"><input id="cEdit" inputmode="numeric" oninput="liveNum(this)" value="'+group(j.contract)+'" style="width:130px;padding:7px 9px;font-size:15px">'
-       + '<button class="btn" style="width:auto;padding:7px 12px;font-size:14px" onclick="saveContract()">OK</button></div>';
-  } else {
-    h += '<div class="mval" style="cursor:pointer" onclick="editContract=true;render()">'+fmt(j.contract)
-       + ' <span style="color:var(--muted);font-size:12px;font-weight:400">засах</span></div>';
+  const st = jobStatus(j), t = typeOf(j.type), dates = jobDates(j);
+  const backTo = view === 'done' ? 'Дууссан ажил' : (view === 'types' ? 'Ажлын төрлөөр' : 'Ажлууд');
+  let h = '<div class="jhd">'
+    + '<button class="bk" onclick="openId=null;editContract=false;ui={};render()">'+IC.back+backTo+'</button>'
+    + '<h1>'+esc(j.name)+'</h1><div class="tg">'
+    + (t ? '<span class="tag" style="margin:0;padding:3px 8px;font-size:12px;background:'+t.c+'1F;color:'+t.c+'">'+t.t+'</span>' : '')
+    + stChip(st)
+    + (dates ? '<span style="font-size:12.5px;color:var(--muted)">'+dates+'</span>' : '')
+    + '</div></div>';
+  const TABS = [['sum','Тойм'],['exp','Зардал'],['inc','Орлого'],['plan','Төлөвлөгөө'],['labor','Хүн өдөр'],['asset','Хөрөнгө']];
+  if(!TABS.some(x=>x[0]===tab)) tab = 'sum';
+  h += '<div class="jtabs" role="tablist">' + TABS.map(x =>
+      '<button role="tab" aria-selected="'+(tab===x[0])+'" class="'+(tab===x[0]?'on':'')+'" '
+      + 'onclick="setTab(\''+x[0]+'\')">'+x[1]+'</button>').join('') + '</div>';
+  if(syncErr){
+    h += '<div class="warn" style="margin:0 0 12px">Сервертэй холбогдоход алдаа: '+esc(syncErr)+'</div>';
   }
-  h += '</div><div><div class="mlabel">Хугацаа</div>'
-    + (ui.dates
-        ? '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">'
-          + '<input id="edStart" type="date" value="'+(j.startDate||'')+'" style="width:142px;padding:6px 8px;font-size:14px">'
-          + '<input id="edEnd" type="date" value="'+(j.endDate||'')+'" style="width:142px;padding:6px 8px;font-size:14px">'
-          + '<button class="btn" style="width:auto;padding:6px 12px;font-size:14px" onclick="saveDates()">OK</button></div>'
-        : '<div class="mval" style="cursor:pointer" onclick="ui={dates:1};render()">'
-          + (j.startDate && j.endDate
-              ? j.startDate+' → '+(stopDays(j) > 0 ? dstr(effEnd(j)) : j.endDate)
-              : 'оруулах')
-          + ' <span style="color:var(--muted);font-size:12px;font-weight:400">засах</span></div>'
-          + (stopDays(j) > 0
-              ? '<div class="rdate">Гэрээ '+j.endDate+' · +'+stopDays(j)+' хоног сунгасан</div>' : ''))
-    + '</div>'
-    + '<div><div class="mlabel">Орсон орлого</div><div class="mval">'+fmt(e)+'</div></div>'
-    + '<div><div class="mlabel">Нийт зардал</div><div class="mval">'+fmt(s)+'</div></div>'
-    + '<div><div class="mlabel">Үндсэн хөрөнгө</div><div class="mval">'+fmt(av)+'</div></div>'
-    + '<div><div class="mlabel">Ажилласан өдөр</div><div class="mval">'+workDays(j)+'</div></div>'
-    + '<div><div class="mlabel">Хүн өдөр</div><div class="mval">'+nd(manDays(j))+'</div></div></div>'
-    + '<label class="check" style="margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line)">'
-    + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>'
-    + 'Ажил дууссан</label>'
-    + (j.createdBy && j.createdBy !== j.owner
-        ? '<div class="rdate" style="margin-top:10px">Үүсгэсэн: '+esc(j.createdBy)+'</div>' : '')
-    + memberBox(j) + '</div>';
 
-  h += progressCard(j);
-  h += chartSvg(j);
-  h += catCard(j);
+  if(tab === 'sum'){
+    h += '<div class="tiles">' + tile('Гэрээний үлдэгдэл', j.contract - s, wd) + tile('Бэлэн мөнгө', e - s, wd) + '</div>';
+    h += statusAlert(j);
+    h += progressCard(j);
+    h += chartSvg(j);
+    h += factsCard(j);
+    h += catSect(j);
+    h += settingsCard(j);
+    h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
+        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
+    return h;
+  }
 
-  h += '<div class="card" style="margin-bottom:18px">'
-    + '<div class="tabs">'
-    + '<button class="'+(tab==='exp'?'on':'')+'" onclick="tab=\'exp\';render()">Зардал</button>'
-    + '<button class="'+(tab==='inc'?'on':'')+'" onclick="tab=\'inc\';render()">Орлого</button>'
-    + '<button class="'+(tab==='plan'?'on':'')+'" onclick="tab=\'plan\';ui={};render()">Төлөвлөгөө</button>'
-    + '<button class="'+(tab==='labor'?'on':'')+'" onclick="tab=\'labor\';ui={};render()">Хүн өдөр</button>'
-    + '<button class="'+(tab==='asset'?'on':'')+'" onclick="tab=\'asset\';render()">Хөрөнгө</button>'
-    + '</div>';
+  if(tab !== 'plan' && tab !== 'asset') h += '<div class="card" style="margin-bottom:14px">';
 
   if(tab === 'plan'){
     const P = j.plan||[];
     const used = P.reduce((t,x)=>t+taskUsed(j,x.id),0);
     h += '<div class="note" style="padding:0 2px 10px">Гүйцэтгэх ажлуудаа хоногоор төлөвлөнө. '
-      + 'Ирц бүртгэхэд эдгээрээс сонгоно.</div></div>';
+      + 'Ирц бүртгэхэд эдгээрээс сонгоно.</div>';
 
     const pr = jobProgress(j);
     h += '<div class="pairs" style="margin:0 0 10px">'
@@ -1093,10 +1436,7 @@ function detailView(j){
           + '<div style="font-size:15px;font-weight:500">'+esc(t.name)
           + (t.done ? '<span class="tag" style="background:#E4EAE6;color:var(--good)">дууссан</span>' : '')+'</div>'
           + '<div class="rdate">'+nd(t.days||0)+' хоног · жин '+Math.round(wgt)+'% · '+nd(u)+' хүн өдөр зарцуулсан</div>'
-          + '</div><div style="display:flex;gap:6px;flex:none">'
-          + '<button class="small" onclick="toggleTask(\''+t.id+'\')">'+(t.done?'Нээх':'Дуусгах')+'</button>'
-          + '<button class="small" onclick="ui={tEdit:\''+t.id+'\'};render()">Засах</button>'
-          + '<button class="x" onclick="delTask(\''+t.id+'\')">×</button></div></div>'
+          + '</div><button class="x" aria-label="Устгах" style="margin:-8px -8px 0 0" onclick="delTask(\''+t.id+'\')">×</button></div>'
           + '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'
           + '<input type="range" min="0" max="100" step="5" value="'+tp+'"'+(t.done?' disabled':'')
           + ' oninput="document.getElementById(\'tp'+t.id+'\').textContent=this.value+\'%\'"'
@@ -1104,6 +1444,9 @@ function detailView(j){
           + '<b id="tp'+t.id+'" style="font-size:14px;color:'+(tp>=100?'var(--good)':'var(--blue)')
           + ';width:42px;text-align:right">'+tp+'%</b></div>'
           + '<div class="tbar"><i style="width:'+tp+'%;background:'+(tp>=100?'var(--good)':'var(--blue)')+'"></i></div>'
+          + '<div style="display:flex;gap:7px;margin-top:10px">'
+          + '<button class="small" onclick="toggleTask(\''+t.id+'\')">'+(t.done?'Нээх':'Дуусгах')+'</button>'
+          + '<button class="small" onclick="ui={tEdit:\''+t.id+'\'};render()">Засах</button></div>'
           + '</div>';
       });
     }
@@ -1119,8 +1462,6 @@ function detailView(j){
       h += '<button class="btn" style="margin-top:10px" onclick="ui={tAdd:1};render()">+ Ажил нэмэх</button>';
     }
 
-    h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
-        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
     return h;
   }
 
@@ -1287,13 +1628,11 @@ function detailView(j){
 
     h += bonusBox(j, W);
 
-    h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
-        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
     return h;
   }
 
   if(tab === 'asset'){
-    h += '<div class="note" style="padding:0">Зардал бүртгэхдээ тэмдэглэсэн хөрөнгө энд цугларна. Гэмтсэн зүйлээ "Хасах" дарж актална.</div></div>';
+    h += '<div class="note" style="padding:0">Зардал бүртгэхдээ тэмдэглэсэн хөрөнгө энд цугларна. Гэмтсэн зүйлээ "Хасах" дарж актална.</div>';
     const list = assets(j).slice().sort((a,b)=> a.date<b.date?1:-1);
     h += '<div class="total"><span>Нийт үндсэн хөрөнгө</span><b>'+fmt(av)+'</b></div>';
     if(list.length===0){
@@ -1312,29 +1651,38 @@ function detailView(j){
               + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>' : '');
       });
     }
-    h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
-        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
     return h;
   }
 
-  h += '<input id="eDesc" placeholder="'+(tab==='exp'?'Юунд зарцуулав':'Ямар төлбөр орсон')+'" style="margin-bottom:8px">'
-    + '<div style="display:flex;gap:8px;margin-bottom:10px">'
-    + '<input id="eAmt" placeholder="Дүн (₮)" inputmode="numeric" oninput="liveNum(this)">'
-    + '<input id="eDate" type="date" value="'+today()+'"></div>';
-  if(tab==='exp'){
-    h += '<div class="chips">' + CATS.map(c =>
-        '<button class="chip'+(c.k===selCat?' on':'')+'" onclick="pickCat(this,\''+c.k+'\')">'+c.t+'</button>'
-      ).join('') + '</div>';
-    h += '<label class="check"><input type="checkbox" id="eAsset">Үндсэн хөрөнгө болж үлдэнэ</label>';
+  const isExp = tab === 'exp';
+  h += '<h2 style="margin:0;font-size:15.5px;font-weight:700">'+(isExp ? 'Шинэ зардал' : 'Шинэ орлого')+'</h2>'
+    + '<label class="fl" for="eDesc">'+(isExp ? 'Юунд' : 'Ямар төлбөр')+'</label>'
+    + '<input id="eDesc" placeholder="'+(isExp ? 'Жишээ: Кабель АС-70' : 'Жишээ: Урьдчилгаа')+'">'
+    + '<div style="display:flex;gap:10px">'
+    + '<div style="flex:1;min-width:0"><label class="fl" for="eAmt">Дүн (₮)</label>'
+    + '<input id="eAmt" placeholder="0" inputmode="numeric" oninput="liveNum(this)"></div>'
+    + '<div style="flex:1;min-width:0"><label class="fl" for="eDate">Огноо</label>'
+    + '<input id="eDate" type="date" value="'+today()+'"></div></div>';
+  if(isExp){
+    if(selCat === 'wage') selCat = 'mat';
+    h += '<div class="fl">Ангилал</div><div class="chips">' + CATS.filter(c => c.k !== 'wage').map(c =>
+        '<button class="chip'+(c.k===selCat?' on':'')+'" onclick="pickCat(this,\''+c.k+'\')">'
+        + '<i class="cd" style="background:'+c.c+'"></i>'+c.t+'</button>'
+      ).join('') + '</div>'
+      + '<label class="check" style="min-height:40px"><input type="checkbox" id="eAsset">Үндсэн хөрөнгө болж үлдэнэ</label>';
   }
-  h += '<button class="btn '+(tab==='inc'?'blue':'')+'" onclick="addEntry()">'
-    + (tab==='exp'?'Зардал нэмэх':'Орлого нэмэх')+'</button></div>';
+  h += '<button class="btn '+(isExp ? '' : 'blue')+'" style="min-height:48px;margin-top:'+(isExp ? '0' : '14px')+'" onclick="addEntry()">'
+    + (isExp ? 'Зардал нэмэх' : 'Орлого нэмэх')+'</button></div>';
 
-  let list = (tab==='exp'? j.expenses : j.incomes).slice().sort((a,b)=> a.date<b.date?1:-1);
+  let list = (isExp ? j.expenses : j.incomes).slice().sort((a,b)=> a.date<b.date?1:-1);
+  const allTot = list.reduce((t,x)=>t+x.amount, 0);
+  const bonIds = {};
+  (j.bonuses||[]).forEach(b => { if(b.expenseId) bonIds[b.expenseId] = 1; });
 
-  if(tab === 'exp' && list.length > 0){
-    const bonIds = {};
-    (j.bonuses||[]).forEach(b => { if(b.expenseId) bonIds[b.expenseId] = 1; });
+  h += '<div class="lhd"><h2>'+(isExp ? 'Зардлууд' : 'Орлогууд')+'</h2>'
+    + '<span>'+list.length+' бичилт · <b>'+fmt(allTot)+'</b></span></div>';
+
+  if(isExp && list.length > 0){
     const keys = [];
     CATS.forEach(c => {
       const v = list.filter(e => catOf(e.cat).k === c.k && !(c.k==='wage' && bonIds[e.id]))
@@ -1346,13 +1694,10 @@ function detailView(j){
 
     if(keys.length > 1){
       if(!keys.some(x=>x.k===expFilter)) expFilter = '';
-      h += '<div class="chips" style="margin:0 0 10px">'
-        + '<button class="chip'+(expFilter===''?' on':'')+'" onclick="expFilter=\'\';render()">'
-        + 'Бүгд</button>'
-        + keys.map(x => '<button class="chip'+(expFilter===x.k?' on':'')
-            + '" onclick="expFilter=\''+x.k+'\';render()">'
-            + '<i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'
-            + x.c+';margin-right:5px"></i>'+x.t+'</button>').join('')
+      h += '<div class="fchips">'
+        + '<button class="fchip'+(expFilter===''?' on':'')+'" onclick="expFilter=\'\';render()">Бүгд</button>'
+        + keys.map(x => '<button class="fchip'+(expFilter===x.k?' on':'')
+            + '" onclick="expFilter=\''+x.k+'\';render()"><i style="background:'+x.c+'"></i>'+x.t+'</button>').join('')
         + '</div>';
     }
     if(expFilter){
@@ -1368,26 +1713,33 @@ function detailView(j){
   }
 
   if(list.length===0){
-    h += '<div class="note">'+(tab==='exp'
+    h += '<div class="note">'+(isExp
       ? (expFilter ? 'Энэ ангилалд бичилт алга.' : 'Одоогоор зардал бүртгээгүй байна.')
       : 'Одоогоор орлого бүртгээгүй байна.')+'</div>';
   } else {
-    list.forEach(it=>{
-      const cls = (tab==='exp' && it.asset) ? 'asset' : tab;
-      h += '<div class="row '+cls+'"><div style="min-width:0"><div class="rdesc">'+esc(it.desc)
-        + (it.asset ? '<span class="tag">хөрөнгө</span>' : '') + '</div>'
-        + (tab==='exp' ? '<select class="catsel" style="border-left:3px solid '+catOf(it.cat).c+'" '
-            + 'onchange="setCat(\''+it.id+'\',this.value)">'
-            + CATS.map(c=>'<option value="'+c.k+'"'+(catOf(it.cat).k===c.k?' selected':'')+'>'+c.t+'</option>').join('')
-            + '</select>' : '')
-        + '<div class="rdate">'+it.date+(it.by ? ' · '+esc(shortBy(it.by)) : '')+'</div></div>'
-        + '<div style="display:flex;align-items:center;gap:8px">'
-        + '<span class="ramt">'+(tab==='exp'?'−':'+')+fmt(it.amount)+'</span>'
-        + '<button class="x" onclick="delEntry(\''+it.id+'\')">×</button></div></div>';
+    h += '<div class="lrows">';
+    list.forEach(it => {
+      const c = isExp ? catOf(it.cat) : null;
+      const isBon = isExp && bonIds[it.id];
+      const dc = isExp ? (isBon ? '#8A6A1F' : c.c) : 'var(--blue)';
+      h += '<div class="erow'+(isExp && it.asset ? ' asset' : '')+'">'
+        + '<span class="dot" style="background:'+dc+'"></span>'
+        + '<div class="bd'+(isExp ? ' tap' : '')+'"'+(isExp ? ' onclick="toggleECat(\''+it.id+'\')"' : '')+'>'
+        + '<div class="ds">'+esc(it.desc)+(it.asset ? '<span class="tag">хөрөнгө</span>' : '')+'</div>'
+        + '<div class="mt">'+(isExp ? (isBon ? 'Урамшуулал' : c.t)+' · ' : '')+shortDate(it.date)
+        + (it.by ? ' · '+esc(shortBy(it.by)) : '')+'</div></div>'
+        + '<span class="am">'+(isExp ? '−' : '+')+fmt(it.amount)+'</span>'
+        + '<button class="x" aria-label="Устгах" onclick="delEntry(\''+it.id+'\')">×</button></div>';
+      if(isExp && ui.eCat === it.id){
+        h += '<div class="ecat"><div class="fl" style="margin-top:6px">Ангилал солих</div><div class="chips" style="margin:0">'
+          + CATS.filter(x => x.k !== 'wage' || c.k === 'wage').map(x =>
+              '<button class="chip'+(x.k===c.k?' on':'')+'" onclick="setCat(\''+it.id+'\',\''+x.k+'\')">'
+              + '<i class="cd" style="background:'+x.c+'"></i>'+x.t+'</button>').join('')
+          + '</div></div>';
+      }
     });
+    h += '</div>';
   }
-  h += (ui.jDel ? confirmBox('Энэ ажлыг бүх бичилттэй нь устгах уу?', 'delJob()')
-        : '<button class="danger" onclick="ui={jDel:1};render()">Энэ ажлыг устгах</button>');
   return h;
 }
 
@@ -1407,7 +1759,7 @@ function stockView(){
   const prof = stock.reduce((t,x)=>t+stockProfit(x), 0);
   const sold = stock.reduce((t,x)=>t+stockSold(x), 0);
 
-  let h = '<button class="link" onclick="view=\'list\';ui={};render()">← Буцах</button>'
+  let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Материал</h2></div>'
     + '<div class="hero"><div style="font-size:13px;opacity:.6">Материалын бүртгэл</div>'
     + '<div class="pairs">'
     + '<div class="pair"><div class="plabel">Үлдэгдлийн өртөг</div>'
@@ -1517,7 +1869,7 @@ function stockView(){
   return h;
 }
 
-function moveForm(it, kind){
+function moveForm(it, kind, preJob){
   const lf = stockLeft(it);
   const act = jobs.filter(j=>!j.done);
   let h = '<div class="inf" style="margin-top:10px">'
@@ -1528,7 +1880,7 @@ function moveForm(it, kind){
     if(!act.length) return h + '<div class="note" style="padding:0">Явагдаж буй ажил алга.</div>'
       + '<div class="btns"><button class="btn ghost" onclick="ui={};render()">Хаах</button></div></div>';
     h += '<select id="mvJob" class="wsel" style="margin-bottom:8px">'
-      + act.map(j=>'<option value="'+j.id+'">'+esc(j.name)+'</option>').join('')+'</select>';
+      + act.map(j=>'<option value="'+j.id+'"'+(j.id===preJob?' selected':'')+'>'+esc(j.name)+'</option>').join('')+'</select>';
   }
   h += '<div style="display:flex;gap:8px">'
     + '<input id="mvQty" inputmode="decimal" placeholder="Ширхэг" '
@@ -1782,73 +2134,102 @@ function confirmBox(text, yesFn){
 }
 
 function rosterView(){
-  let h = '<button class="link" onclick="view=\'list\';ui={};render()">← Буцах</button>';
-  const totalDue = roster.reduce((s,r)=>s+rosterStats(r).due, 0);
+  const ST = {};
+  roster.forEach(r => { ST[r.id] = rosterStats(r); });
+  const owes = r => ST[r.id].due + ST[r.id].bonDue > 0;
+  const totalDue = roster.reduce((s,r)=>s+ST[r.id].due, 0);
+  const nOwed = roster.filter(owes).length;
+
+  let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Ажилчид</h2>'
+    + (isAdmin() && !ui.rAdd ? '<button class="btn sm" onclick="ui={rAdd:1};render()">'+IC.plus+'Ажилтан</button>' : '')
+    + '</div>';
+  if(ui.rAdd && isAdmin()) h += wForm('ra', '', 0, 'Нэмэх', 'addRoster()');
+
   if(roster.length > 0){
     h += '<div class="total" style="background:'+(totalDue>0?'#FBE9E6':'#E6F0EA')+'">'
-      + '<span>Нийт олгох цалин</span><b style="color:'+(totalDue>0?'var(--bad)':'var(--good)')+'">'
-      + fmt(totalDue)+'</b></div>';
+      + '<span><span style="display:block;font-size:14px;font-weight:500">Нийт олгох цалин</span>'
+      + (nOwed ? '<span class="rdate">'+nOwed+' хүнд</span>' : '')+'</span>'
+      + '<b style="color:'+(totalDue>0?'var(--bad)':'var(--good)')+'">'+fmt(totalDue)+'</b></div>';
+    if(roster.length > 4){
+      h += '<label class="srch">'+IC.search
+        + '<input type="search" placeholder="Нэрээр хайх" aria-label="Нэрээр хайх" oninput="filterRoster(this.value)"></label>';
+    }
   }
-  h += '<div class="secttl" style="margin:0 0 10px">Ажилчдын жагсаалт</div>';
   if(roster.length === 0 && !ui.rAdd){
     h += '<div class="empty">Ажилтан бүртгээгүй байна. Нэмсэн ажилтнаа дараа нь аль ч ажилд дуудаж оруулна.</div>';
   }
+
   const sorted = roster.slice().sort(function(a,b){
-    const sa = rosterStats(a), sb = rosterStats(b);
-    return (sb.due + sb.bonDue) - (sa.due + sa.bonDue);
+    return (ST[b.id].due + ST[b.id].bonDue) - (ST[a.id].due + ST[a.id].bonDue);
   });
-  sorted.forEach(r => {
-    if(ui.rEdit === r.id){
-      h += wForm('re', r.name, r.rate, 'Хадгалах', "saveRosterEdit('"+r.id+"')", r.role);
-      return;
-    }
-    const st = rosterStats(r);
-    h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
-      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
-      + '<span style="font-weight:600;font-size:15.5px">'+esc(r.name)
-      + (r.role ? '<span class="tag" style="background:#E6ECEF;color:var(--blue)">'+esc(r.role)+'</span>' : '')+'</span>'
-      + '<span style="font-size:12.5px;color:var(--muted)">'+fmt(r.rate)+' / өдөр</span></div>'
-      + '<div class="pairs" style="margin:9px 0 10px">'
-      + '<div class="pair"><div class="plabel">Авах цалин</div><div class="pval '
-      + (st.due>0?'neg':'pos')+'">'+fmt(st.due)+'</div></div>'
-      + '<div class="pair" style="cursor:pointer" onclick="togglePaid(\''+r.id+'\')">'
-      + '<div class="plabel">Авсан цалин <span class="arw'+(ui.rHist===r.id?' op':'')
-      + '" style="font-size:12px">\u203A</span></div>'
-      + '<div class="pval" style="color:var(--ink)">'+fmt(st.paid)+'</div></div></div>'
-      + (ui.rHist === r.id ? paidHistBox(r) : '')
-      + (st.bonDue > 0
-          ? '<div class="total" style="background:#E7EFE9;padding:10px 12px;margin:0 0 10px">'
-            + '<span style="font-size:13.5px">Ашгийн урамшуулал</span>'
-            + '<b style="color:var(--good);font-size:16px">'+fmt(st.bonDue)+'</b></div>' : '')
-      + '<div class="sub" style="margin:0 0 10px">'+st.njobs+' ажилд · '+nd(st.days)+' өдөр ажилласан'
-      + (st.bonus>0 ? ' · урамшуулал '+fmt(st.bonus) : '')
-      + (st.open.length ? '<br>'+st.open.map(o=>esc(o.name)+': '+nd(o.days)+' өдөр ('+fmt(o.amt)+')').join('<br>') : '')
-      + '</div>'
-      + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
-      + (isAdmin() && (st.due + st.bonDue) > 0
-          ? '<button class="small" style="border-color:#BBD4C4;color:var(--good)" '
-            + 'onclick="openRPay(\''+r.id+'\')">Олгох · '+fmt(st.due + st.bonDue)+'</button>' : '')
-      + (isAdmin() && rosterJobs(r).length
-          ? '<button class="small" onclick="openRBon(\''+r.id+'\')">Урамшуулал</button>' : '')
-      + (isAdmin()
-          ? '<button class="small" onclick="ui={rEdit:\''+r.id+'\'};render()">Засах</button>'
-            + '<button class="small warn" onclick="ui={rDel:\''+r.id+'\'};render()">Устгах</button>'
-          : '')+'</div>'
-      + (ui.rPay === r.id ? rPayBox(r) : '')
-      + (ui.rBon === r.id ? rBonBox(r) : '')
-      + (ui.rDel === r.id
-          ? confirmBox(esc(r.name)+' — жагсаалтаас устгах уу? Ажлууд дээрх бүртгэл хэвээр үлдэнэ.',
-                       "delRoster('"+r.id+"')")
-          : '')
-      + '</div>';
-  });
+  const busy = r => ui.rOpen===r.id || ui.rEdit===r.id || ui.rHist===r.id || ui.rDel===r.id
+    || ui.rBon===r.id || ui.rPay===r.id || ui.rMenu===r.id;
+  const top = sorted.filter(owes), rest = sorted.filter(r => !owes(r));
+  top.forEach(r => { h += rCard(r, ST[r.id]); });
+  if(rest.length){
+    if(top.length) h += '<div class="secttl" style="margin:16px 2px 8px">Олгох цалингүй</div>';
+    rest.forEach(r => { h += busy(r) ? rCard(r, ST[r.id]) : rMini(r); });
+  }
+
   if(!isAdmin()){
     h += '<div class="note" style="margin-top:10px">Энэ жагсаалтыг зөвхөн эзэн нь удирдана. Ажил дээрээ эндээс ажилтан сонгон нэмж болно.</div>';
-    return h;
   }
-  if(ui.rAdd) h += wForm('ra', '', 0, 'Нэмэх', 'addRoster()');
-  else h += '<button class="btn" style="margin-top:8px" onclick="ui={rAdd:1};render()">+ Ажилтан нэмэх</button>';
   return h;
+}
+
+function rMini(r){
+  return '<button class="rmini" data-q="'+esc((r.name+' '+(r.role||'')).toLowerCase())+'" onclick="ui={rOpen:\''+r.id+'\'};render()">'
+    + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+    + '<b style="font-size:15.5px">'+esc(r.name)+'</b>'
+    + '<span style="font-size:12.5px;color:var(--muted)"> · '+(r.role ? esc(r.role)+' · ' : '')+fmt(r.rate)+'/өдөр</span></span>'
+    + '<span style="color:var(--muted);display:flex;flex:none">'+IC.chev+'</span></button>';
+}
+
+function rCard(r, st){
+  if(ui.rEdit === r.id){
+    return '<div data-q="'+esc((r.name+' '+(r.role||'')).toLowerCase())+'">'
+      + wForm('re', r.name, r.rate, 'Хадгалах', "saveRosterEdit('"+r.id+"')", r.role) + '</div>';
+  }
+  const tot = st.due + st.bonDue;
+  let h = '<div class="card" data-q="'+esc((r.name+' '+(r.role||'')).toLowerCase())+'" style="padding:14px 16px 16px;margin-bottom:10px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+    + '<div style="min-width:0"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
+    + '<span style="font-size:16.5px;font-weight:700">'+esc(r.name)+'</span>'
+    + (r.role ? '<span class="tag" style="margin:0;background:#E6ECEF;color:var(--blue)">'+esc(r.role)+'</span>' : '')
+    + (st.lead ? '<span class="lead" style="margin:0">удирдагч</span>' : '')+'</div>'
+    + '<div class="sub" style="margin-top:4px">'+fmt(r.rate)+'/өдөр · '+st.njobs+' ажил · '+nd(st.days)+' өдөр'
+    + (st.bonus > 0 ? ' · урамшуулал '+fmt(st.bonus) : '')+'</div></div>'
+    + (isAdmin() ? '<button class="x" style="margin:-8px -10px 0 0" aria-label="Бусад үйлдэл" '
+        + 'onclick="toggleRMenu(\''+r.id+'\')">'+IC.dots+'</button>' : '')
+    + '</div>';
+  if(isAdmin() && ui.rMenu === r.id){
+    h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;padding:10px;background:#F2F5F1;border-radius:10px">'
+      + (rosterJobs(r).length ? '<button class="small" onclick="openRBon(\''+r.id+'\')">Урамшуулал</button>' : '')
+      + '<button class="small" onclick="ui={rEdit:\''+r.id+'\'};render()">Засах</button>'
+      + '<button class="small warn" onclick="ui={rDel:\''+r.id+'\'};render()">Устгах</button></div>';
+  }
+  h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin-top:10px">'
+    + '<div><div class="mlabel">Авах цалин</div>'
+    + '<div style="font-size:20px;font-weight:700;margin-top:2px;color:'+(st.due>0?'var(--bad)':'var(--good)')+'">'+fmt(st.due)+'</div></div>'
+    + '<button class="lnk" onclick="togglePaid(\''+r.id+'\')">Авсан '+fmt(st.paid)+' '+(ui.rHist===r.id ? '⌃' : '›')+'</button></div>'
+    + (ui.rHist === r.id ? '<div style="margin-top:8px">'+paidHistBox(r)+'</div>' : '')
+    + (st.bonDue > 0
+        ? '<div class="total" style="background:#E7EFE9;padding:10px 12px;margin:10px 0 0">'
+          + '<span style="font-size:13.5px">Ашгийн урамшуулал</span>'
+          + '<b style="color:var(--good);font-size:16px">'+fmt(st.bonDue)+'</b></div>' : '')
+    + (st.open.length
+        ? '<div class="sub" style="margin-top:8px">'
+          + st.open.map(o=>esc(o.name)+': '+nd(o.days)+' өдөр ('+fmt(o.amt)+')').join('<br>')+'</div>' : '')
+    + (isAdmin() && tot > 0 && ui.rPay !== r.id
+        ? '<button class="btn" style="background:var(--good);margin-top:12px;min-height:46px" '
+          + 'onclick="openRPay(\''+r.id+'\')">Олгох · '+fmt(tot)+'</button>' : '')
+    + (ui.rPay === r.id ? rPayBox(r) : '')
+    + (ui.rBon === r.id ? rBonBox(r) : '')
+    + (ui.rDel === r.id
+        ? confirmBox(esc(r.name)+' — жагсаалтаас устгах уу? Ажлууд дээрх бүртгэл хэвээр үлдэнэ.',
+                     "delRoster('"+r.id+"')")
+        : '');
+  return h + '</div>';
 }
 
 function openRPay(rid){
@@ -2062,7 +2443,7 @@ function importWorker(rid){
 }
 
 function typesView(){
-  let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>';
+  let h = '<button class="link" onclick="view=\'more\';render()">← Бусад</button>';
   const groups = TYPES.map(t => ({t, list: jobs.filter(j=>j.type===t.k)}));
   const un = jobs.filter(j => !typeOf(j.type));
   if(un.length) groups.push({t:{k:null, t:'Ангилаагүй', c:'#8A9499'}, list: un});
@@ -2116,7 +2497,7 @@ function doneView(){
   const done = jobs.filter(j=>j.done);
 
   if(!isAdmin()){
-    let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>'
+    let h = '<button class="link" onclick="view=\'more\';render()">← Бусад</button>'
       + '<div class="secttl" style="margin:0 0 10px">Дууссан ажил</div>';
     if(done.length === 0) return h + '<div class="empty">Дууссан ажил алга.</div>';
     done.slice().sort((a,b)=>(b.doneDate||'')<(a.doneDate||'')?-1:1).forEach(j => {
@@ -2137,7 +2518,7 @@ function doneView(){
   const dW_days = done.reduce((s,j)=>s+workDays(j),0);
   const dW = wageDueAll(done);
 
-  let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>'
+  let h = '<button class="link" onclick="view=\'more\';render()">← Бусад</button>'
     + '<div class="hero"><div style="font-size:13px;opacity:.6">Дууссан '+done.length
     + ' ажлын нэгдсэн дүн</div>'
     + '<div class="pairs">' + pair('Гэрээнээс гарсан ашиг', dC-dS, dW>0?{label:SUBL, value:dC-dS-dW}:null)
@@ -2241,7 +2622,7 @@ function assetsView(){
   gone.sort((a,b)=> a.e.date<b.e.date?1:-1);
   const total = live.reduce((s,x)=>s+x.e.amount,0);
 
-  let h = '<button class="link" onclick="view=\'list\';render()">← Буцах</button>'
+  let h = '<button class="link" onclick="view=\'more\';render()">← Бусад</button>'
     + '<div class="total"><span>Ашиглагдаж буй хөрөнгө</span><b>'+fmt(total)+'</b></div>';
 
   if(live.length===0){
@@ -2382,7 +2763,7 @@ function toggleDone(){
   save(); render();
 }
 
-function openJob(id){ openId=id; tab='exp'; editContract=false; ui={}; pickOpen=false;
+function openJob(id){ openId=id; tab='sum'; editContract=false; ui={}; pickOpen=false;
   lastW=''; lastT=''; lastD=''; openW=false; openM=false; openB=false; bonPick={}; expFilter=''; render(); }
 
 function addJob(){
@@ -2434,7 +2815,7 @@ function pickCat(el, k){
 function setCat(eid, k){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const e = j.expenses.find(x=>x.id===eid); if(!e) return;
-  e.cat = k; save(); render();
+  e.cat = k; ui = {}; save(); render();
 }
 
 function setProgress(v){
