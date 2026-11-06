@@ -357,6 +357,9 @@ let openW = false, openM = false, openB = false;
 let openDone = {};
 let bonPick = {};
 let lastW = '', lastT = '', lastD = '';
+let lastMatJob = '';
+try{ lastMatJob = localStorage.getItem('last-mat-job') || ''; }catch(e){}
+function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setItem('last-mat-job', lastMatJob); }catch(e){} }
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
@@ -409,6 +412,10 @@ const FIELDS = ['name','contract','type','progress','done','doneDate','members',
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
 const isAdmin = () => !!me && me === admin;
 let matUsers = [];
+let matPct = null, lastSeller = '';
+const MATPCT_DEF = 10;
+const curMatPct = () => (typeof matPct === 'number') ? matPct : MATPCT_DEF;
+const pctOf = v => { let x = parseFloat(String(v).replace(',','.')); if(!(x >= 0)) x = 0; return Math.min(100, Math.round(x*100)/100); };
 const canMat = () => isAdmin() || (!!me && matUsers.indexOf(me) >= 0);
 let shadow = {}, rshadow = {}, sshadow = {};
 
@@ -470,7 +477,7 @@ function save(){
 function saveMatUsers(){
   if(!me || !window.FB || !isAdmin()) return;
   try {
-    FB.setDoc(FB.doc(FB.db, 'config', 'admin'), clean({email: admin || me, mat: matUsers}))
+    FB.setDoc(FB.doc(FB.db, 'config', 'admin'), clean({email: admin || me, mat: matUsers, matPct: curMatPct()}))
       .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
   } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
 }
@@ -583,9 +590,11 @@ function subscribe(){
   F.onSnapshot(
     F.doc(F.db, 'config', 'admin'),
     d => {
-      const v = (d && d.exists && d.exists()) ? (d.data().mat||[]) : [];
+      const ok = !!(d && d.exists && d.exists());
+      const v = ok ? (d.data().mat||[]) : [];
       const nw = v.map(x => String(x).toLowerCase());
-      if(JSON.stringify(nw) !== JSON.stringify(matUsers)){ matUsers = nw; cloudRender(); }
+      const mp = (ok && typeof d.data().matPct === 'number') ? d.data().matPct : null;
+      if(JSON.stringify(nw) !== JSON.stringify(matUsers) || mp !== matPct){ matUsers = nw; matPct = mp; cloudRender(); }
     },
     ()=>{}
   );
@@ -1257,7 +1266,7 @@ function coYear(y){
   doneY.forEach(j => add(j.doneDate, 'job', coProfit(j)));
   stock.forEach(it => (it.moves||[]).forEach(mv => {
     if(String(mv.date||'').slice(0,4) !== y) return;
-    const v = ((mv.price||0) - mvCost(it, mv)) * (mv.qty||0);
+    const v = ((mv.price||0) - mvCost(it, mv)) * (mv.qty||0) - (mv.sbon||0);
     matP += v; add(mv.date, 'mat', v);
   }));
   const E = ohEntries().filter(e => e.date.slice(0,4) === y);
@@ -2393,10 +2402,29 @@ const stockLeft = it => Math.max(0, (it.qty||0) - movedQty(it));
 const mvCost = (it, m) => (m && m.cost !== undefined && m.cost !== null) ? m.cost : (it.cost||0);
 const stockProfit = it => (it.moves||[]).reduce((t,m)=>t+((m.price||0)-mvCost(it,m))*(m.qty||0), 0);
 const stockSold = it => (it.moves||[]).reduce((t,m)=>t+(m.price||0)*(m.qty||0), 0);
+const stockSBon = it => (it.moves||[]).reduce((t,m)=>t+(m.sbon||0), 0);
+// борлуулагчтай бол зарсан дүнгийн pct% компанид, ашгийн үлдсэн хэсэг борлуулагчид
+function mvSplit(q, pr, cost, pct){
+  const sale = q*pr, margin = (pr - cost)*q;
+  if(pct === null || pct === undefined) return {sale: sale, margin: margin, co: margin, sb: 0};
+  const coMin = sale * pct / 100;
+  const sb = margin > coMin ? Math.round(margin - coMin) : 0;
+  return {sale: sale, margin: margin, co: margin - sb, sb: sb};
+}
+const matEarnedOf = r => stock.reduce((t,it) => t + (it.moves||[]).filter(m=>m.seller===r.id)
+  .reduce((u,m)=>u+(m.sbon||0), 0), 0);
+const matPaidOf = r => (r.mpays||[]).reduce((t,p)=>t+(p.amount||0), 0);
+const matDueOf = r => Math.max(0, matEarnedOf(r) - matPaidOf(r));
+function saveMatPct(){
+  if(!isAdmin()) return;
+  matPct = pctOf((document.getElementById('mpIn')||{}).value||'');
+  saveMatUsers(); ui = {}; render();
+}
 
 function stockView(){
   const left = stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0);
-  const prof = stock.reduce((t,x)=>t+stockProfit(x), 0);
+  const prof = stock.reduce((t,x)=>t+stockProfit(x)-stockSBon(x), 0);
+  const sbAll = stock.reduce((t,x)=>t+stockSBon(x), 0);
   const sold = stock.reduce((t,x)=>t+stockSold(x), 0);
 
   let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Материал</h2>'
@@ -2420,10 +2448,11 @@ function stockView(){
     + '<div class="pairs">'
     + '<div class="pair"><div class="plabel">Үлдэгдлийн өртөг</div>'
     + '<div class="pval" style="color:#8FD3AE">'+fmt(left)+'</div></div>'
-    + '<div class="pair"><div class="plabel">Материалын ашиг</div>'
+    + '<div class="pair"><div class="plabel">Материалын ашиг'+(sbAll > 0 ? ' (компанид)' : '')+'</div>'
     + '<div class="pval '+(prof<0?'neg':'pos')+'">'+fmt(prof)+'</div></div></div>'
     + '<div class="meta"><div><div class="mlabel">Нэр төрөл</div><div class="mval">'+stock.length+'</div></div>'
     + '<div><div class="mlabel">Гарсан дүн</div><div class="mval">'+fmt(sold)+'</div></div>'
+    + (sbAll > 0 ? '<div><div class="mlabel">Борлуулагчид</div><div class="mval">'+fmt(sbAll)+'</div></div>' : '')
     + '<div><div class="mlabel">Нийлүүлэгчийн өглөг</div><div class="mval" style="color:'
     + (supOweAll() > 0 ? '#F4A99C' : '#fff')+'">'+fmt(supOweAll())+'</div></div></div></div>';
 
@@ -2455,7 +2484,7 @@ function stockView(){
         + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
       return;
     }
-    const lf = stockLeft(it), pf = stockProfit(it);
+    const lf = stockLeft(it), pf = stockProfit(it) - stockSBon(it);
     h += '<div class="card" style="padding:13px 14px;margin-bottom:8px">'
       + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
       + '<span style="font-weight:600;font-size:15.5px">'+esc(it.name)+'</span>'
@@ -2467,6 +2496,7 @@ function stockView(){
       + '<div class="pval '+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</div></div></div>'
       + '<div class="sub" style="margin:0 0 10px">Нийт '+nd(it.qty||0)+' ш · гарсан '+nd(movedQty(it))+' ш'
       + ((it.moves||[]).length ? ' · '+(it.moves||[]).length+' гүйлгээ' : '')
+      + (stockSBon(it) > 0 ? ' · борлуулагчид '+fmt(stockSBon(it)) : '')
       + (lastSup(it) ? '<br>Нийлүүлэгч: '+esc(lastSup(it).name)
           + (itemOwe(it) > 0 ? ' · <span style="color:var(--bad);font-weight:600">өглөг '+fmt(itemOwe(it))+'</span>'
                              : ((it.buys||[]).some(b=>b.sup) ? ' · <span style="color:var(--good)">төлөгдсөн</span>' : ''))
@@ -2529,6 +2559,19 @@ function stockView(){
       h += '</div>';
     }
     h += '</div>';
+    h += '<div class="sect">'
+      + '<button class="hd" onclick="ui={sPct:'+(ui.sPct?0:1)+'};render()">'
+      + '<span>Борлуулалтын урамшуулал <span class="cnt">· компанийн хувь '+curMatPct()+'%</span></span>'
+      + '<span class="arw'+(ui.sPct?' op':'')+'">›</span></button>';
+    if(ui.sPct){
+      h += '<div class="bd"><div class="rdate" style="margin-bottom:8px">Борлуулагч сонгож зарах эсвэл ажилд гаргахад '
+        + 'зарсан дүнгийн энэ хувь компанид үлдэж, ашгийн үлдсэн хэсэг борлуулагчид урамшуулал болно. '
+        + 'Гүйлгээ бүр дээр өөрчилж болно.</div>'
+        + '<div style="display:flex;gap:8px;align-items:center">'
+        + '<input id="mpIn" inputmode="decimal" value="'+curMatPct()+'" aria-label="Компанийн хувь" style="width:90px;text-align:right">'
+        + '<b>%</b><button class="btn" style="width:auto;padding:10px 18px;margin-left:auto" onclick="saveMatPct()">Хадгалах</button></div></div>';
+    }
+    h += '</div>';
   }
 
   return h;
@@ -2544,24 +2587,56 @@ function moveForm(it, kind, preJob){
   if(kind === 'job'){
     if(!act.length) return h + '<div class="note" style="padding:0">Явагдаж буй ажил алга.</div>'
       + '<div class="btns"><button class="btn ghost" onclick="ui={};render()">Хаах</button></div></div>';
-    h += '<select id="mvJob" class="wsel" style="margin-bottom:8px">'
-      + act.map(j=>'<option value="'+j.id+'"'+(j.id===preJob?' selected':'')+'>'+esc(j.name)+'</option>').join('')+'</select>';
+    const jsel = ui.mvJ !== undefined ? ui.mvJ
+      : (preJob || (act.some(j=>j.id===lastMatJob) ? lastMatJob : ''));
+    h += '<select id="mvJob" class="wsel" style="margin-bottom:8px" onchange="setMatJob(this.value)">'
+      + act.map(j=>'<option value="'+j.id+'"'+(j.id===jsel?' selected':'')+'>'+esc(j.name)+'</option>').join('')+'</select>';
   }
   h += '<div style="display:flex;gap:8px">'
-    + '<input id="mvQty" inputmode="decimal" placeholder="Ширхэг" '
+    + '<input id="mvQty" inputmode="decimal" placeholder="Ширхэг" aria-label="Ширхэг" '
     + 'value="'+(ui.mvQ!==undefined?esc(ui.mvQ):'1')+'" onchange="ui.mvQ=this.value;render()">'
-    + '<input id="mvPrice" inputmode="numeric" oninput="liveNum(this)" placeholder="Нэгж үнэ (₮)" '
+    + '<input id="mvPrice" inputmode="numeric" oninput="liveNum(this)" placeholder="Нэгж үнэ (₮)" aria-label="Нэгж үнэ" '
     + 'value="'+(ui.mvP!==undefined?ui.mvP:'')+'" onchange="ui.mvP=this.value;render()"></div>'
-    + '<input id="mvDate" type="date" value="'+today()+'" style="margin-top:8px">';
+    + '<input id="mvDate" type="date" value="'+(ui.mvD||today())+'" onchange="ui.mvD=this.value" style="margin-top:8px">';
+
+  // борлуулагч
+  const want = ui.mvS !== undefined ? ui.mvS : lastSeller;
+  const sel = (want && roster.some(r=>r.id===want)) ? want : '';
+  h += '<label class="fl" for="mvSeller">Борлуулагч</label>'
+    + '<select id="mvSeller" class="wsel" onchange="ui.mvS=this.value;render()">'
+    + '<option value="">— Компани (урамшуулалгүй) —</option>'
+    + roster.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(r =>
+        '<option value="'+r.id+'"'+(r.id===sel?' selected':'')+'>'+esc(r.name)+(r.role?' · '+esc(r.role):'')+'</option>').join('')
+    + '</select>';
+  const pct = ui.mvC !== undefined ? pctOf(ui.mvC) : curMatPct();
+  if(sel){
+    h += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
+      + '<label for="mvPct" style="font-size:13.5px;flex:1;min-width:0">Компанийн хувь '
+      + '<span style="color:var(--muted);font-size:12.5px">(зарсан дүнгээс)</span></label>'
+      + (isAdmin()
+          ? '<input id="mvPct" inputmode="decimal" value="'+pct+'" onchange="ui.mvC=this.value;render()" style="width:76px;text-align:right">'
+          : '<b>'+pct+'</b>')
+      + '<b>%</b></div>';
+  }
+
   const q = parseFloat(String(ui.mvQ!==undefined?ui.mvQ:'1').replace(',','.'))||0;
   const pr = num(ui.mvP||'')||0;
   if(q > 0 && pr > 0){
-    const tot = q*pr, prof = (pr-(it.cost||0))*q;
+    const sp = mvSplit(q, pr, it.cost||0, sel ? pct : null);
+    const sr = sel ? roster.find(r=>r.id===sel) : null;
     h += '<div class="calc" style="margin:8px 0">'
-      + '<div class="ln"><span>Нийт дүн</span><b>'+fmt(tot)+'</b></div>'
-      + '<div class="ln"><span>Өртөг</span><b>−'+fmt((it.cost||0)*q)+'</b></div>'
-      + '<div class="ln tot"><span>Материалын ашиг</span>'
-      + '<b class="'+(prof<0?'neg':'pos')+'">'+fmt(prof)+'</b></div></div>';
+      + '<div class="ln"><span>Нийт дүн</span><b>'+fmt(sp.sale)+'</b></div>'
+      + '<div class="ln"><span>Өртөг</span><b>−'+fmt((it.cost||0)*q)+'</b></div>';
+    if(sel){
+      h += '<div class="ln"><span>Ашиг</span><b class="'+(sp.margin<0?'neg':'')+'">'+fmt(sp.margin)+'</b></div>'
+        + '<div class="ln"><span>Компанид ('+pct+'%)</span><b>'+fmt(sp.co)+'</b></div>'
+        + '<div class="ln tot"><span>'+esc(sr ? sr.name : 'Борлуулагч')+'-д урамшуулал</span>'
+        + '<b class="pos">'+fmt(sp.sb)+'</b></div>';
+    } else {
+      h += '<div class="ln tot"><span>Материалын ашиг</span>'
+        + '<b class="'+(sp.margin<0?'neg':'pos')+'">'+fmt(sp.margin)+'</b></div>';
+    }
+    h += '</div>';
   }
   h += '<div class="btns"><button class="btn" onclick="doMove(\''+it.id+'\',\''+kind+'\')">'
     + (kind==='sell'?'Зарах':'Гаргах')+'</button>'
@@ -2569,9 +2644,37 @@ function moveForm(it, kind, preJob){
   return h;
 }
 
+// гүйлгээний нэг мөр (жагсаалт бүрт)
+function mvRow(it, m, withName){
+  const j = jobs.find(y=>y.id===m.jobId);
+  const q = m.qty||0, buy = mvCost(it,m)*q, sell = (m.price||0)*q, pf = sell - buy, sb = m.sbon||0;
+  const sr = m.seller ? roster.find(r=>r.id===m.seller) : null;
+  const what = m.type==='sell' ? 'Борлуулалт' : 'Ажилд: '+esc(j?j.name:'—');
+  let h = '<div style="padding:8px 0;border-bottom:1px solid #EFF2EE">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+    + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px">'
+    + (withName ? esc(it.name)+'<span class="rdate">'+what+' · '+nd(q)+' ш</span>'
+                : what+'<span class="rdate">'+m.date+' · '+nd(q)+' ш</span>')
+    + '</span><button class="x" style="flex:none" aria-label="Устгах" onclick="delMove(\''+it.id+'\',\''+m.id+'\')">×</button></div>'
+    + '<div style="display:flex;gap:10px;margin-top:3px;font-size:12.5px;flex-wrap:wrap">'
+    + '<span style="color:var(--muted)">Авсан <b style="color:var(--ink)">'+fmt(buy)+'</b></span>'
+    + '<span style="color:var(--muted)">Зарсан <b style="color:var(--ink)">'+fmt(sell)+'</b></span>'
+    + '<span style="color:var(--muted)">Ашиг <b class="'+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</b></span>'
+    + '</div>';
+  if(m.seller){
+    h += '<div style="font-size:12.5px;color:var(--muted);margin-top:3px">Борлуулагч <b style="color:var(--ink)">'
+      + esc(sr ? sr.name : '—')+'</b> '+fmt(sb)+' · компанид '+fmt(pf - sb)+' ('+(m.pct||0)+'%)</div>';
+  }
+  if(ui.mvDel === m.id){
+    h += confirmBox('Энэ борлуулалтын урамшууллыг '+esc(sr ? sr.name : 'борлуулагч')+'-д олгочихсон байна. '
+      + 'Устгавал түүнд илүү олголт үүснэ. Устгах уу?', "delMove('"+it.id+"','"+m.id+"',1)");
+  }
+  return h + '</div>';
+}
+
 function allMovesBox(L){
   L = L.slice().sort((a,b) => a.m.date < b.m.date ? 1 : (a.m.date > b.m.date ? -1 : 0));
-  let tb = 0, ts = 0, sb = 0, ss = 0, jb = 0, js_ = 0, ns = 0, nj = 0;
+  let tb = 0, ts = 0, sb = 0, ss = 0, jb = 0, js_ = 0, ns = 0, nj = 0, tsb = 0;
   let h = '<div class="inf" style="margin-top:4px">';
   let last = '';
   L.forEach(x => {
@@ -2584,26 +2687,18 @@ function allMovesBox(L){
         + m.date+'</div>';
       last = m.date;
     }
-    const j = jobs.find(y=>y.id===m.jobId);
-    h += '<div style="padding:7px 0;border-bottom:1px solid #EFF2EE">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
-      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px">'
-      + esc(it.name)+'<span class="rdate">'
-      + (m.type==='sell' ? 'Борлуулалт' : 'Ажилд: '+esc(j?j.name:'—'))+' · '+nd(q)+' ш</span></span>'
-      + '<button class="x" style="flex:none" onclick="delMove(\''+it.id+'\',\''+m.id+'\')">×</button></div>'
-      + '<div style="display:flex;gap:10px;margin-top:3px;font-size:12.5px;flex-wrap:wrap">'
-      + '<span style="color:var(--muted)">Авсан <b style="color:var(--ink)">'+fmt(buy)+'</b></span>'
-      + '<span style="color:var(--muted)">Зарсан <b style="color:var(--ink)">'+fmt(sell)+'</b></span>'
-      + '<span style="color:var(--muted)">Ашиг <b class="'+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</b></span>'
-      + '</div></div>';
+    tsb += m.sbon||0;
+    h += mvRow(it, m, true);
   });
   h += '<div class="calc" style="margin-top:12px">'
     + '<div class="ln"><span>Борлуулалт · '+ns+'</span><b>'+fmt(ss)+'</b></div>'
     + '<div class="ln"><span>Ажилд гаргасан · '+nj+'</span><b>'+fmt(js_)+'</b></div>'
     + '<div class="ln"><span>Авсан үнийн нийлбэр</span><b>'+fmt(tb)+'</b></div>'
     + '<div class="ln"><span>Зарсан үнийн нийлбэр</span><b>'+fmt(ts)+'</b></div>'
-    + '<div class="ln tot"><span>Материалын ашиг</span>'
-    + '<b class="'+((ts-tb)<0?'neg':'pos')+'">'+fmt(ts-tb)+'</b></div></div>';
+    + (tsb > 0 ? '<div class="ln"><span>Ашиг</span><b>'+fmt(ts-tb)+'</b></div>'
+               + '<div class="ln"><span>Борлуулагчид</span><b>−'+fmt(tsb)+'</b></div>' : '')
+    + '<div class="ln tot"><span>Материалын ашиг'+(tsb > 0 ? ' (компанид)' : '')+'</span>'
+    + '<b class="'+((ts-tb-tsb)<0?'neg':'pos')+'">'+fmt(ts-tb-tsb)+'</b></div></div>';
   return h + '</div>';
 }
 
@@ -2611,28 +2706,20 @@ function movesBox(it){
   const L = (it.moves||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
   let tq = 0, tb = 0, ts = 0;
   let h = '<div class="inf" style="margin-top:10px">';
+  let tsb = 0;
   L.forEach(m => {
-    const j = jobs.find(x=>x.id===m.jobId);
-    const q = m.qty || 0, buy = mvCost(it, m)*q, sell = (m.price||0)*q, pf = sell - buy;
-    tq += q; tb += buy; ts += sell;
-    h += '<div style="padding:8px 0;border-bottom:1px solid #EFF2EE">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
-      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px">'
-      + (m.type==='sell' ? 'Борлуулалт' : 'Ажилд: '+esc(j?j.name:'—'))
-      + '<span class="rdate">'+m.date+' · '+nd(q)+' ш</span></span>'
-      + '<button class="x" style="flex:none" onclick="delMove(\''+it.id+'\',\''+m.id+'\')">×</button></div>'
-      + '<div style="display:flex;gap:10px;margin-top:3px;font-size:12.5px;flex-wrap:wrap">'
-      + '<span style="color:var(--muted)">Авсан <b style="color:var(--ink)">'+fmt(buy)+'</b></span>'
-      + '<span style="color:var(--muted)">Зарсан <b style="color:var(--ink)">'+fmt(sell)+'</b></span>'
-      + '<span style="color:var(--muted)">Ашиг <b class="'+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</b></span>'
-      + '</div></div>';
+    const q = m.qty || 0;
+    tq += q; tb += mvCost(it, m)*q; ts += (m.price||0)*q; tsb += m.sbon||0;
+    h += mvRow(it, m, false);
   });
   h += '<div class="calc" style="margin-top:10px">'
     + '<div class="ln"><span>Гарсан нийт</span><b>'+nd(tq)+' ш</b></div>'
     + '<div class="ln"><span>Авсан үнийн нийлбэр</span><b>'+fmt(tb)+'</b></div>'
     + '<div class="ln"><span>Зарсан үнийн нийлбэр</span><b>'+fmt(ts)+'</b></div>'
-    + '<div class="ln tot"><span>Материалын ашиг</span>'
-    + '<b class="'+((ts-tb)<0?'neg':'pos')+'">'+fmt(ts-tb)+'</b></div></div>';
+    + (tsb > 0 ? '<div class="ln"><span>Ашиг</span><b>'+fmt(ts-tb)+'</b></div>'
+               + '<div class="ln"><span>Борлуулагчид</span><b>−'+fmt(tsb)+'</b></div>' : '')
+    + '<div class="ln tot"><span>Материалын ашиг'+(tsb > 0 ? ' (компанид)' : '')+'</span>'
+    + '<b class="'+((ts-tb-tsb)<0?'neg':'pos')+'">'+fmt(ts-tb-tsb)+'</b></div></div>';
   return h + '</div>';
 }
 
@@ -2678,27 +2765,43 @@ function doMove(id, kind){
   if(q > stockLeft(it)){ alert('Үлдэгдлээс их байна. Үлдэгдэл '+nd(stockLeft(it))+' ш.'); return; }
   if(!(pr > 0)){ alert('Нэгж үнийг оруулна уу.'); return; }
 
+  const seller = ((document.getElementById('mvSeller')||{}).value || '');
+  let pct = null;
+  if(seller){
+    const pEl = document.getElementById('mvPct');
+    pct = (pEl && isAdmin()) ? pctOf(pEl.value) : curMatPct();
+  }
+  const sp = mvSplit(q, pr, it.cost||0, pct);
+  const sx = seller ? {seller: seller, pct: pct, sbon: sp.sb} : {};
+  lastSeller = seller;
+
   let jobId = '';
   if(kind === 'job'){
     jobId = (document.getElementById('mvJob')||{}).value || '';
     const j = jobs.find(x=>x.id===jobId);
     if(!j){ alert('Ажлаа сонгоно уу.'); return; }
+    setMatJob(jobId);
     const eid = uid();
     j.expenses.push({id: eid, desc: 'Материал \u2014 '+it.name+' ('+nd(q)+' ш × '+fmt(pr)+')',
       amount: q*pr, date: dt, cat: 'mat', asset: false, by: me||''});
     it.moves = it.moves || [];
-    it.moves.push({id: uid(), type:'job', qty: q, price: pr, cost: it.cost||0, date: dt, jobId: jobId, expenseId: eid});
+    it.moves.push(Object.assign({id: uid(), type:'job', qty: q, price: pr, cost: it.cost||0, date: dt, jobId: jobId, expenseId: eid}, sx));
     save();
   } else {
     it.moves = it.moves || [];
-    it.moves.push({id: uid(), type:'sell', qty: q, price: pr, cost: it.cost||0, date: dt});
+    it.moves.push(Object.assign({id: uid(), type:'sell', qty: q, price: pr, cost: it.cost||0, date: dt}, sx));
   }
   saveStock(); ui = {}; render();
 }
 
-function delMove(id, mid){
+function delMove(id, mid, force){
   const it = stock.find(x=>x.id===id); if(!it) return;
   const m = (it.moves||[]).find(x=>x.id===mid);
+  if(!force && m && m.seller && (m.sbon||0) > 0){
+    const r = roster.find(x=>x.id===m.seller);
+    if(r && matPaidOf(r) > matEarnedOf(r) - m.sbon + 0.5){ ui.mvDel = mid; render(); return; }
+  }
+  if(ui.mvDel) delete ui.mvDel;
   if(m && m.jobId && m.expenseId){
     const j = jobs.find(x=>x.id===m.jobId);
     if(j){ j.expenses = j.expenses.filter(e=>e.id!==m.expenseId); save(); }
@@ -2739,6 +2842,11 @@ function paidHistBox(r){
       days: wage.reduce((s,p)=>s+(p.days||0), 0),
       last: dates.length ? dates[dates.length-1] : ''});
   });
+  const mp = matPaidOf(r);
+  if(mp > 0){
+    const ds = (r.mpays||[]).map(p=>p.date).filter(Boolean).sort();
+    rows.push({name: 'Материалын борлуулалт', wa: 0, ba: mp, days: 0, last: ds.length ? ds[ds.length-1] : ''});
+  }
   if(!rows.length){
     return '<div class="note" style="padding:0 0 10px">Олголт хийгдээгүй байна.</div>';
   }
@@ -2780,7 +2888,8 @@ function rosterStats(r){
     due += d;
     if(d > 0) open.push({name: j.name, amt: d, days: wkDays(j,w.id) - wkPaidDays(j,w.id)});
   });
-  return {days, paid, njobs, due, bonus, bonDue, open, lead};
+  const mEarn = matEarnedOf(r), mPaid = matPaidOf(r);
+  return {days, paid, njobs, due, bonus, bonDue, open, lead, mEarn: mEarn, mPaid: mPaid, mDue: Math.max(0, mEarn - mPaid)};
 }
 
 const ROLES = ['Инженер','Техникч','Ахлах','Гагнуурчин','Цахилгаанчин','Жолооч','Туслах ажилтан'];
@@ -2805,7 +2914,7 @@ function confirmBox(text, yesFn){
 function rosterView(){
   const ST = {};
   roster.forEach(r => { ST[r.id] = rosterStats(r); });
-  const owes = r => ST[r.id].due + ST[r.id].bonDue > 0;
+  const owes = r => ST[r.id].due + ST[r.id].bonDue + ST[r.id].mDue > 0;
   const totalDue = roster.reduce((s,r)=>s+ST[r.id].due, 0);
   const nOwed = roster.filter(owes).length;
 
@@ -2829,7 +2938,7 @@ function rosterView(){
   }
 
   const sorted = roster.slice().sort(function(a,b){
-    return (ST[b.id].due + ST[b.id].bonDue) - (ST[a.id].due + ST[a.id].bonDue);
+    return (ST[b.id].due + ST[b.id].bonDue + ST[b.id].mDue) - (ST[a.id].due + ST[a.id].bonDue + ST[a.id].mDue);
   });
   const busy = r => ui.rOpen===r.id || ui.rEdit===r.id || ui.rHist===r.id || ui.rDel===r.id
     || ui.rBon===r.id || ui.rPay===r.id || ui.rMenu===r.id;
@@ -2859,7 +2968,7 @@ function rCard(r, st){
     return '<div data-q="'+esc((r.name+' '+(r.role||'')).toLowerCase())+'">'
       + wForm('re', r.name, r.rate, 'Хадгалах', "saveRosterEdit('"+r.id+"')", r.role) + '</div>';
   }
-  const tot = st.due + st.bonDue;
+  const tot = st.due + st.bonDue + st.mDue;
   let h = '<div class="card" data-q="'+esc((r.name+' '+(r.role||'')).toLowerCase())+'" style="padding:14px 16px 16px;margin-bottom:10px">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
     + '<div style="min-width:0"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
@@ -2867,7 +2976,8 @@ function rCard(r, st){
     + (r.role ? '<span class="tag" style="margin:0;background:#E6ECEF;color:var(--blue)">'+esc(r.role)+'</span>' : '')
     + (st.lead ? '<span class="lead" style="margin:0">удирдагч</span>' : '')+'</div>'
     + '<div class="sub" style="margin-top:4px">'+fmt(r.rate)+'/өдөр · '+st.njobs+' ажил · '+nd(st.days)+' өдөр'
-    + (st.bonus > 0 ? ' · урамшуулал '+fmt(st.bonus) : '')+'</div></div>'
+    + (st.bonus > 0 ? ' · урамшуулал '+fmt(st.bonus) : '')
+    + (st.mEarn > 0 ? ' · борлуулалт '+fmt(st.mEarn) : '')+'</div></div>'
     + (isAdmin() ? '<button class="x" style="margin:-8px -10px 0 0" aria-label="Бусад үйлдэл" '
         + 'onclick="toggleRMenu(\''+r.id+'\')">'+IC.dots+'</button>' : '')
     + '</div>';
@@ -2886,6 +2996,10 @@ function rCard(r, st){
         ? '<div class="total" style="background:#E7EFE9;padding:10px 12px;margin:10px 0 0">'
           + '<span style="font-size:13.5px">Ашгийн урамшуулал</span>'
           + '<b style="color:var(--good);font-size:16px">'+fmt(st.bonDue)+'</b></div>' : '')
+    + (st.mDue > 0
+        ? '<div class="total" style="background:#F4EEDC;padding:10px 12px;margin:10px 0 0">'
+          + '<span style="font-size:13.5px">Борлуулалтын урамшуулал</span>'
+          + '<b style="color:#7A5C14;font-size:16px">'+fmt(st.mDue)+'</b></div>' : '')
     + (st.open.length
         ? '<div class="sub" style="margin-top:8px">'
           + st.open.map(o=>esc(o.name)+': '+nd(o.days)+' өдөр ('+fmt(o.amt)+')').join('<br>')+'</div>' : '')
@@ -2903,7 +3017,9 @@ function rCard(r, st){
 
 function openRPay(rid){
   const pick = {};
-  rosterJobs(roster.find(x=>x.id===rid)||{}).forEach(x => { if(x.due > 0 || x.bon > 0) pick[x.j.id] = 1; });
+  const rr = roster.find(x=>x.id===rid)||{};
+  rosterJobs(rr).forEach(x => { if(x.due > 0 || x.bon > 0) pick[x.j.id] = 1; });
+  if(rr.id && matDueOf(rr) > 0) pick.__mat = 1;
   ui = {rPay: rid, pick: pick, amt: {}};
   render();
 }
@@ -2931,6 +3047,15 @@ function payAlloc(x){
   return {amt:amt, wage:wage, bon:amt - wage, max:max};
 }
 
+function matPayAmt(r){
+  const md = matDueOf(r);
+  const on = !!(ui.pick && ui.pick.__mat);
+  if(!on || md <= 0) return {amt: 0, max: md};
+  let v = (ui.amt && ui.amt.__mat !== undefined) ? num(ui.amt.__mat) : md;
+  if(!(v > 0)) v = 0;
+  return {amt: Math.min(v, md), max: md};
+}
+
 function setPayAmt(jid, el){
   ui.amt = ui.amt || {};
   ui.amt[jid] = el.value;
@@ -2939,7 +3064,8 @@ function setPayAmt(jid, el){
 
 function rPayBox(r){
   const list = rosterJobs(r).filter(x => x.due > 0 || x.bon > 0);
-  if(!list.length) return '<div class="note" style="padding:8px 0 0">Олгох дүн алга.</div>';
+  const ma = matPayAmt(r);
+  if(!list.length && !(ma.max > 0)) return '<div class="note" style="padding:8px 0 0">Олгох дүн алга.</div>';
   let tW = 0, tB = 0;
   list.forEach(x => { const a = payAlloc(x); tW += a.wage; tB += a.bon; });
 
@@ -2974,13 +3100,34 @@ function rPayBox(r){
     }
     h += '</div>';
   });
+  if(ma.max > 0){
+    const on = !!(ui.pick && ui.pick.__mat);
+    const raw = (ui.amt && ui.amt.__mat !== undefined) ? ui.amt.__mat : group(ma.max);
+    h += '<div style="padding:9px 0;border-bottom:1px solid #EFF2EE">'
+      + '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">'
+      + '<input type="checkbox"'+(on?' checked':'')
+      + ' style="width:21px;height:21px;accent-color:var(--good);flex:none;margin:0"'
+      + ' onchange="togglePick(\'__mat\')">'
+      + '<span style="flex:1;min-width:0"><span style="font-size:15px">Материалын борлуулалт</span>'
+      + '<span class="rdate">борлуулалтын урамшуулал '+fmt(ma.max)+'</span></span>'
+      + '<b style="white-space:nowrap">'+fmt(ma.amt)+'</b></label>';
+    if(on){
+      h += '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0 31px">'
+        + '<input inputmode="numeric" oninput="liveNum(this)" onchange="setPayAmt(\'__mat\',this)" '
+        + 'value="'+raw+'" style="flex:1;padding:8px 10px;font-size:15px">'
+        + '<button class="small" onclick="setPayAmt(\'__mat\',{value:\''+ma.max+'\'})">Бүгд</button></div>'
+        + (ma.amt < ma.max ? '<div class="rdate" style="margin:5px 0 0 31px">үлдэх '+fmt(ma.max - ma.amt)+'</div>' : '');
+    }
+    h += '</div>';
+  }
   h += '<input id="rpDate" type="date" value="'+today()+'" style="margin-top:10px">'
     + '<div class="calc" style="margin:8px 0">'
     + (tW > 0 ? '<div class="ln"><span>Цалин</span><b>'+fmt(tW)+'</b></div>' : '')
     + (tB > 0 ? '<div class="ln"><span>Ашгийн урамшуулал</span><b>'+fmt(tB)+'</b></div>' : '')
+    + (ma.amt > 0 ? '<div class="ln"><span>Борлуулалтын урамшуулал</span><b>'+fmt(ma.amt)+'</b></div>' : '')
     + '<div class="ln tot"><span>Нийт олгох</span>'
-    + '<b class="pos">'+fmt(tW + tB)+'</b></div></div>'
-    + '<div class="btns"><button class="btn"'+((tW+tB)>0?'':' disabled')
+    + '<b class="pos">'+fmt(tW + tB + ma.amt)+'</b></div></div>'
+    + '<div class="btns"><button class="btn"'+((tW+tB+ma.amt)>0?'':' disabled')
     + ' onclick="payRosterWage(\''+r.id+'\')">Олгох</button>'
     + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
   return h;
@@ -3020,8 +3167,15 @@ function payRosterWage(rid){
   const r = roster.find(x=>x.id===rid); if(!r) return;
   const dt = (document.getElementById('rpDate')||{}).value || today();
   const list = rosterJobs(r).filter(x => (x.due > 0 || x.bon > 0) && ui.pick && ui.pick[x.j.id]);
-  if(!list.length){ alert('Ажил сонгоно уу.'); return; }
+  const ma = matPayAmt(r);
+  if(!list.length && !(ma.amt > 0)){ alert('Ажил сонгоно уу.'); return; }
   let any = false;
+  if(ma.amt > 0){
+    any = true;
+    r.mpays = r.mpays || [];
+    r.mpays.push({id: uid(), date: dt, amount: ma.amt, by: me||''});
+    saveRoster();
+  }
   list.forEach(x => {
     const a = payAlloc(x);
     if(a.wage > 0){
@@ -3914,7 +4068,7 @@ function boot(){
     me = u ? (u.email||'').toLowerCase() : null;
     jobs = []; roster = []; stock = []; shadow = {}; rshadow = {}; sshadow = {}; admin = null;
     overhead = []; oshadow = {}; cpYear = null; sups = []; supShadow = {};
-    matUsers = [];
+    matUsers = []; matPct = null;
     booted = !me; ui = {}; openId = null; view = 'list';
     if(!me){ render(); return; }
     try{ localStorage.setItem('last-email', me); }catch(e){}
@@ -3924,6 +4078,7 @@ function boot(){
       if(d.exists() && d.data().email){
         admin = (d.data().email||'').toLowerCase();
         matUsers = (d.data().mat||[]).map(x => String(x).toLowerCase());
+        matPct = (typeof d.data().matPct === 'number') ? d.data().matPct : null;
         subscribe();
       } else {
         F.setDoc(ref, {email: me})
