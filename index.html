@@ -414,7 +414,7 @@ let me = null, admin = null, booted = false, syncErr = '', pendingRender = false
 const isAdmin = () => !!me && me === admin;
 let matUsers = [];
 let matPct = null, lastSeller = '';
-const MATPCT_DEF = 10;
+const MATPCT_DEF = 20;
 const curMatPct = () => (typeof matPct === 'number') ? matPct : MATPCT_DEF;
 const pctOf = v => { let x = parseFloat(String(v).replace(',','.')); if(!(x >= 0)) x = 0; return Math.min(100, Math.round(x*100)/100); };
 const canMat = () => isAdmin() || (!!me && matUsers.indexOf(me) >= 0);
@@ -478,7 +478,8 @@ function save(){
 function saveMatUsers(){
   if(!me || !window.FB || !isAdmin()) return;
   try {
-    FB.setDoc(FB.doc(FB.db, 'config', 'admin'), clean({email: admin || me, mat: matUsers, matPct: curMatPct()}))
+    FB.setDoc(FB.doc(FB.db, 'config', 'admin'), clean(Object.assign({email: admin || me, mat: matUsers},
+      (typeof matPct === 'number') ? {matPct: matPct, matPctSet: true} : {})))
       .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
   } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
 }
@@ -594,7 +595,7 @@ function subscribe(){
       const ok = !!(d && d.exists && d.exists());
       const v = ok ? (d.data().mat||[]) : [];
       const nw = v.map(x => String(x).toLowerCase());
-      const mp = (ok && typeof d.data().matPct === 'number') ? d.data().matPct : null;
+      const mp = (ok && d.data().matPctSet && typeof d.data().matPct === 'number') ? d.data().matPct : null;
       if(JSON.stringify(nw) !== JSON.stringify(matUsers) || mp !== matPct){ matUsers = nw; matPct = mp; cloudRender(); }
     },
     ()=>{}
@@ -4151,7 +4152,7 @@ function boot(){
       if(d.exists() && d.data().email){
         admin = (d.data().email||'').toLowerCase();
         matUsers = (d.data().mat||[]).map(x => String(x).toLowerCase());
-        matPct = (typeof d.data().matPct === 'number') ? d.data().matPct : null;
+        matPct = (d.data().matPctSet && typeof d.data().matPct === 'number') ? d.data().matPct : null;
         subscribe();
       } else {
         F.setDoc(ref, {email: me})
