@@ -360,6 +360,7 @@ let lastW = '', lastT = '', lastD = '';
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
+let sups = [], supShadow = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
 const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
@@ -501,6 +502,25 @@ function saveOH(){
   });
 }
 
+function saveSup(){
+  if(!me || !window.FB || !canMat()) return;
+  sups.forEach(x => {
+    const cur = JSON.stringify(x);
+    if(supShadow[x.id] === cur) return;
+    supShadow[x.id] = cur;
+    try {
+      FB.setDoc(FB.doc(FB.db, 'sup', x.id), clean({...x, owner: admin || me}))
+        .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
+    } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
+  });
+  Object.keys(supShadow).forEach(id => {
+    if(!sups.some(x => x.id === id)){
+      delete supShadow[id];
+      try { FB.deleteDoc(FB.doc(FB.db, 'sup', id)).catch(()=>{}); } catch(e) {}
+    }
+  });
+}
+
 function saveStock(){
   if(!me || !window.FB || !canMat()) return;
   stock.forEach(it => {
@@ -580,6 +600,15 @@ function subscribe(){
       ()=>{}
     );
   }
+  F.onSnapshot(
+    F.query(F.collection(F.db, 'sup'), F.where('owner', '==', admin || me)),
+    snap => {
+      sups = snap.docs.map(d => ({...d.data(), id: d.id, pays: (d.data().pays)||[]}));
+      supShadow = {}; sups.forEach(x => supShadow[x.id] = JSON.stringify(x));
+      cloudRender();
+    },
+    ()=>{}
+  );
   F.onSnapshot(
     F.query(F.collection(F.db, 'stock'), F.where('owner', '==', admin || me)),
     snap => {
@@ -823,7 +852,7 @@ function navCur(){
   if(openId && jobs.some(j=>j.id===openId)) return view === 'list' ? 'list' : 'more';
   if(['assets','types','done','more','oh','coprof'].indexOf(view) >= 0) return 'more';
   if(view === 'roster') return 'roster';
-  if(view === 'stock' && canMat()) return 'stock';
+  if((view === 'stock' || view === 'sup') && canMat()) return 'stock';
   return 'list';
 }
 function bottomNav(){
@@ -1228,7 +1257,7 @@ function coYear(y){
   doneY.forEach(j => add(j.doneDate, 'job', coProfit(j)));
   stock.forEach(it => (it.moves||[]).forEach(mv => {
     if(String(mv.date||'').slice(0,4) !== y) return;
-    const v = ((mv.price||0) - (it.cost||0)) * (mv.qty||0);
+    const v = ((mv.price||0) - mvCost(it, mv)) * (mv.qty||0);
     matP += v; add(mv.date, 'mat', v);
   }));
   const E = ohEntries().filter(e => e.date.slice(0,4) === y);
@@ -1295,6 +1324,13 @@ function coProfView(){
         : '')
     + '</div>';
 
+  if(y === cur && supOweAll() > 0){
+    h += '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
+      + '<span style="font-weight:600">Нийлүүлэгчид төлөх өглөг</span>'
+      + '<b class="neg" style="white-space:nowrap">'+fmt(supOweAll())+'</b></div>'
+      + '<div class="rdate" style="margin-top:4px">Материалын өртөг ашгийн тооцоонд аль хэдийн орсон тул '
+      + 'энэ дүн цэвэр ашгаас дахин хасагдахгүй — мөнгө төлөх үүрэг.</div></div>';
+  }
   if(y === cur && act.length){
     h += '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
       + '<span style="font-weight:600">Явагдаж буй '+act.length+' ажлаас хүлээгдэж буй</span>'
@@ -1332,6 +1368,160 @@ function coProfView(){
   return h;
 }
 
+// ---------- нийлүүлэгч, өглөг ----------
+const supBought = sid => stock.reduce((t,it) => t + (it.buys||[]).filter(b=>b.sup===sid)
+  .reduce((u,b)=>u+(b.qty||0)*(b.cost||0), 0), 0);
+const supPaid = x => (x.pays||[]).reduce((t,p)=>t+(p.amount||0), 0);
+const supOwe = x => supBought(x.id) - supPaid(x);
+const supOweAll = () => sups.reduce((t,x)=>t+Math.max(0, supOwe(x)), 0);
+function lastSup(it){
+  const L = (it.buys||[]).filter(b=>b.sup);
+  if(!L.length) return null;
+  return sups.find(x=>x.id===L[L.length-1].sup) || null;
+}
+function supIdOf(name){
+  name = String(name||'').trim();
+  if(!name) return '';
+  const k = name.toLowerCase();
+  let x = sups.find(y => String(y.name||'').trim().toLowerCase() === k);
+  if(!x){ x = {id: uid(), name: name, pays: [], owner: admin||me}; sups.push(x); }
+  return x.id;
+}
+function payTo(sid, amt, date, note){
+  const x = sups.find(y=>y.id===sid); if(!x) return;
+  x.pays = x.pays || [];
+  x.pays.push({id: uid(), date: date || today(), amount: amt, note: note||'', by: me||''});
+}
+function supFields(pf, supName){
+  return '<label class="fl" for="'+pf+'Sup">Нийлүүлэгч (худалдаж авсан газар)</label>'
+    + '<input id="'+pf+'Sup" list="supList" placeholder="Жишээ: Номин трейд" value="'+esc(supName||'')+'">'
+    + '<datalist id="supList">'+sups.map(x=>'<option value="'+esc(x.name)+'"></option>').join('')+'</datalist>'
+    + '<div style="display:flex;gap:10px;align-items:flex-end">'
+    + '<div style="flex:1;min-width:0"><label class="fl" for="'+pf+'Date">Авсан огноо</label>'
+    + '<input id="'+pf+'Date" type="date" value="'+today()+'"></div>'
+    + '<label class="check" style="flex:1;margin:0;min-height:44px"><input type="checkbox" id="'+pf+'Paid">Бүрэн төлсөн</label></div>'
+    + '<div class="rdate" style="margin-top:4px">Нийлүүлэгч оруулбал дүн нь түүнд өглөг болж бүртгэгдэнэ. '
+    + 'Тэр даруй төлсөн бол "Бүрэн төлсөн"-ийг сонгоно.</div>';
+}
+function buyFields(pf, cost, supName){
+  return '<div style="display:flex;gap:8px">'
+    + '<input id="'+pf+'Qty" inputmode="decimal" placeholder="Ширхэг">'
+    + '<input id="'+pf+'Cost" inputmode="numeric" oninput="liveNum(this)" placeholder="Нэгж өртөг (₮)" value="'
+    + (cost ? group(cost) : '')+'"></div>' + supFields(pf, supName);
+}
+function readSup(pf){
+  const g = id => document.getElementById(id);
+  return {name: ((g(pf+'Sup')||{}).value||'').trim(),
+          date: (g(pf+'Date')||{}).value || today(),
+          paid: !!((g(pf+'Paid')||{}).checked)};
+}
+function restock(id){
+  const it = stock.find(x=>x.id===id); if(!it) return;
+  const q = parseFloat(String((document.getElementById('sbQty')||{}).value||'').replace(',','.'));
+  const c = num((document.getElementById('sbCost')||{}).value||'');
+  if(!(q > 0)){ alert('Ширхэгийн тоог оруулна уу.'); return; }
+  if(!(c >= 0)){ alert('Нэгж өртгөө оруулна уу.'); return; }
+  const b = readSup('sb');
+  // өмнөх гүйлгээний өртгийг тогтоож, дундаж өртөг тооцно
+  (it.moves||[]).forEach(m => { if(m.cost === undefined || m.cost === null) m.cost = it.cost||0; });
+  const left = stockLeft(it);
+  it.cost = Math.round((left*(it.cost||0) + q*c) / (left + q));
+  it.qty = (it.qty||0) + q;
+  const sid = b.name ? supIdOf(b.name) : '';
+  it.buys = it.buys || [];
+  it.buys.push({id: uid(), date: b.date, qty: q, cost: c, sup: sid});
+  if(sid && b.paid && q*c > 0) payTo(sid, q*c, b.date, it.name);
+  saveStock(); saveSup(); ui = {}; render();
+}
+function paySup(sid){
+  const x = sups.find(y=>y.id===sid); if(!x || !isAdmin()) return;
+  const amt = num((document.getElementById('spAmt')||{}).value||'');
+  const dt = (document.getElementById('spDate')||{}).value || today();
+  if(!(amt > 0)){ alert('Олгох дүнгээ оруулна уу.'); return; }
+  payTo(sid, amt, dt, '');
+  saveSup(); ui = {supHist: sid}; render();
+}
+function delSupPay(sid, pid){
+  const x = sups.find(y=>y.id===sid); if(!x || !isAdmin()) return;
+  x.pays = (x.pays||[]).filter(p=>p.id!==pid);
+  saveSup(); render();
+}
+function delSup(sid){
+  if(!isAdmin()) return;
+  sups = sups.filter(x=>x.id!==sid);
+  saveSup(); ui = {}; render();
+}
+
+function supView(){
+  const tot = supOweAll();
+  const L = sups.slice().sort((a,b)=>supOwe(b)-supOwe(a));
+  let h = '<button class="link" onclick="view=\'stock\';ui={};render()">← Материал</button>'
+    + '<div class="sechd" style="margin-top:0"><h2 style="font-size:22px">Нийлүүлэгч, өглөг</h2></div>'
+    + '<div class="total" style="background:'+(tot>0?'#FBE9E6':'#E6F0EA')+'">'
+    + '<span><span style="display:block;font-size:14px;font-weight:500">Нийт өглөг</span>'
+    + '<span class="rdate">'+L.filter(x=>supOwe(x)>0).length+' нийлүүлэгчид</span></span>'
+    + '<b style="color:'+(tot>0?'var(--bad)':'var(--good)')+'">'+fmt(tot)+'</b></div>';
+  if(!L.length){
+    return h + '<div class="empty">Нийлүүлэгч алга. Материал нэмэх эсвэл "Нэмж авах" үед худалдаж авсан '
+      + 'газрын нэрийг оруулахад энд өглөг нь бүртгэгдэнэ.</div>';
+  }
+  L.forEach(x => {
+    const bo = supBought(x.id), pa = supPaid(x), ow = bo - pa;
+    h += '<div class="card" style="padding:14px 16px 16px;margin-bottom:10px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+      + '<div style="min-width:0"><div style="font-size:16.5px;font-weight:700">'+esc(x.name)+'</div>'
+      + '<div class="sub" style="margin-top:3px">Авсан '+fmt(bo)+' · Төлсөн '+fmt(pa)+'</div></div>'
+      + '<div style="text-align:right;flex:none"><div class="mlabel">'+(ow<0 ? 'Илүү төлсөн' : 'Өглөг')+'</div>'
+      + '<div style="font-size:19px;font-weight:700;color:'+(ow>0?'var(--bad)':'var(--good)')+'">'+fmt(Math.abs(ow))+'</div></div></div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:4px">'
+      + '<button class="lnk" onclick="ui={supHist:'+(ui.supHist===x.id?'0':'\''+x.id+'\'')+'};render()">Түүх '
+      + (ui.supHist===x.id ? '⌃' : '›')+'</button></div>';
+    if(isAdmin() && ui.supPay === x.id){
+      h += '<div class="inf" style="margin-top:6px">'
+        + '<div style="display:flex;gap:10px">'
+        + '<div style="flex:1;min-width:0"><label class="fl" for="spAmt" style="margin-top:0">Олгох дүн (₮)</label>'
+        + '<input id="spAmt" inputmode="numeric" oninput="liveNum(this)" value="'+(ow>0?group(ow):'')+'"></div>'
+        + '<div style="flex:1;min-width:0"><label class="fl" for="spDate" style="margin-top:0">Огноо</label>'
+        + '<input id="spDate" type="date" value="'+today()+'"></div></div>'
+        + '<div class="rdate" style="margin-top:6px">Хэсэгчлэн олгож болно. Олгосон дүн өглөгөөс хасагдана.</div>'
+        + '<div class="btns" style="margin-top:8px"><button class="btn" style="background:var(--good)" onclick="paySup(\''+x.id+'\')">Олгох</button>'
+        + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+    } else if(isAdmin() && ow > 0){
+      h += '<button class="btn" style="background:var(--good);margin-top:8px;min-height:46px" '
+        + 'onclick="ui={supPay:\''+x.id+'\'};render()">Олгох · '+fmt(ow)+'</button>';
+    }
+    if(ui.supHist === x.id){
+      const ev = [];
+      stock.forEach(it => (it.buys||[]).forEach(b => {
+        if(b.sup === x.id) ev.push({d: b.date||'', t: 'buy', txt: esc(it.name)+' · '+nd(b.qty)+' ш × '+fmt(b.cost), v: (b.qty||0)*(b.cost||0)});
+      }));
+      (x.pays||[]).forEach(p => ev.push({d: p.date||'', t: 'pay', id: p.id,
+        txt: 'Төлбөр олгосон'+(p.note ? ' · '+esc(p.note) : ''), v: p.amount||0}));
+      ev.sort((a,b)=> a.d < b.d ? 1 : (a.d > b.d ? -1 : (a.t==='pay' ? -1 : 1)));
+      h += '<div class="lrows" style="margin:10px 0 0">';
+      if(!ev.length) h += '<div class="note" style="padding:12px 14px">Түүх алга.</div>';
+      ev.forEach(e => {
+        h += '<div class="erow"><span class="dot" style="background:'+(e.t==='buy'?'var(--bad)':'var(--good)')+'"></span>'
+          + '<div class="bd"><div class="ds" style="font-size:14px">'+e.txt+'</div>'
+          + '<div class="mt">'+(e.t==='buy' ? 'Худалдан авалт · өглөг нэмэгдсэн' : 'Зарлага')+' · '+shortDate(e.d)+'</div></div>'
+          + '<span class="am" style="'+(e.t==='pay'?'color:var(--good)':'')+';padding-right:'+(e.t==='pay'&&isAdmin()?'0':'12px')+'">'
+          + (e.t==='buy' ? '+' : '−')+fmt(e.v)+'</span>'
+          + (e.t==='pay' && isAdmin() ? '<button class="x" aria-label="Устгах" onclick="delSupPay(\''+x.id+'\',\''+e.id+'\')">×</button>' : '')
+          + '</div>';
+      });
+      h += '</div>';
+      if(isAdmin() && bo === 0 && pa === 0){
+        h += ui.supDel === x.id
+          ? confirmBox(esc(x.name)+' — устгах уу?', "delSup('"+x.id+"')")
+          : '<button class="small warn" style="margin-top:10px" onclick="ui={supHist:\''+x.id+'\',supDel:\''+x.id+'\'};render()">Нийлүүлэгч устгах</button>';
+      }
+    }
+    h += '</div>';
+  });
+  if(!isAdmin()) h += '<div class="note">Төлбөр олгохыг зөвхөн эзэн хийнэ.</div>';
+  return h;
+}
+
 function toggleECat(id){ ui = (ui.eCat === id) ? {} : {eCat: id}; render(); }
 function toggleRMenu(id){ ui = (ui.rMenu === id) ? {} : {rMenu: id}; render(); }
 function filterRoster(q){
@@ -1356,6 +1546,7 @@ function render(){
   else if(view === 'types' && isAdmin()) html = typesView();
   else if(view === 'roster') html = rosterView();
   else if(view === 'stock' && canMat()) html = stockView();
+  else if(view === 'sup' && canMat()) html = supView();
   else if(view === 'oh' && isAdmin()) html = ohView();
   else if(view === 'coprof' && isAdmin()) html = coProfView();
   else if(view === 'more') html = moreView();
@@ -2094,7 +2285,8 @@ function typeTag(j){
 
 const movedQty = it => (it.moves||[]).reduce((t,m)=>t+(m.qty||0), 0);
 const stockLeft = it => Math.max(0, (it.qty||0) - movedQty(it));
-const stockProfit = it => (it.moves||[]).reduce((t,m)=>t+((m.price||0)-(it.cost||0))*(m.qty||0), 0);
+const mvCost = (it, m) => (m && m.cost !== undefined && m.cost !== null) ? m.cost : (it.cost||0);
+const stockProfit = it => (it.moves||[]).reduce((t,m)=>t+((m.price||0)-mvCost(it,m))*(m.qty||0), 0);
 const stockSold = it => (it.moves||[]).reduce((t,m)=>t+(m.price||0)*(m.qty||0), 0);
 
 function stockView(){
@@ -2110,7 +2302,13 @@ function stockView(){
     + '<div class="pair"><div class="plabel">Материалын ашиг</div>'
     + '<div class="pval '+(prof<0?'neg':'pos')+'">'+fmt(prof)+'</div></div></div>'
     + '<div class="meta"><div><div class="mlabel">Нэр төрөл</div><div class="mval">'+stock.length+'</div></div>'
-    + '<div><div class="mlabel">Гарсан дүн</div><div class="mval">'+fmt(sold)+'</div></div></div></div>';
+    + '<div><div class="mlabel">Гарсан дүн</div><div class="mval">'+fmt(sold)+'</div></div>'
+    + '<div><div class="mlabel">Нийлүүлэгчийн өглөг</div><div class="mval" style="color:'
+    + (supOweAll() > 0 ? '#F4A99C' : '#fff')+'">'+fmt(supOweAll())+'</div></div></div></div>';
+
+  h += '<button class="navbtn" onclick="view=\'sup\';ui={};render()">'
+    + '<span>Нийлүүлэгч, өглөг</span><span style="color:'+(supOweAll() > 0 ? 'var(--bad)' : 'var(--muted)')+'">'
+    + (supOweAll() > 0 ? 'өглөг '+fmt(supOweAll()) : sups.length+' нийлүүлэгч')+' ›</span></button>';
 
   const allM = [];
   stock.forEach(it => (it.moves||[]).forEach(m => allM.push({m: m, it: it})));
@@ -2147,22 +2345,33 @@ function stockView(){
       + '<div class="pair"><div class="plabel">Ашиг</div>'
       + '<div class="pval '+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</div></div></div>'
       + '<div class="sub" style="margin:0 0 10px">Нийт '+nd(it.qty||0)+' ш · гарсан '+nd(movedQty(it))+' ш'
-      + ((it.moves||[]).length ? ' · '+(it.moves||[]).length+' гүйлгээ' : '')+'</div>'
+      + ((it.moves||[]).length ? ' · '+(it.moves||[]).length+' гүйлгээ' : '')
+      + (lastSup(it) ? '<br>Нийлүүлэгч: '+esc(lastSup(it).name) : '')+'</div>'
       + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
       + (lf > 0 ? '<button class="small" style="border-color:#BBD4C4;color:var(--good)" '
           + 'onclick="ui={sSell:\''+it.id+'\'};render()">Зарах</button>'
           + '<button class="small" onclick="ui={sJob:\''+it.id+'\'};render()">Ажилд гаргах</button>' : '')
+      + '<button class="small" onclick="ui={sBuy:\''+it.id+'\'};render()">Нэмж авах</button>'
       + ((it.moves||[]).length ? '<button class="small" onclick="toggleMoves(\''+it.id+'\')">Гүйлгээ</button>' : '')
       + (isAdmin()
           ? '<button class="small" onclick="ui={sEdit:\''+it.id+'\'};render()">Засах</button>'
             + '<button class="small warn" onclick="ui={sDel:\''+it.id+'\'};render()">Устгах</button>'
           : '')+'</div>'
+      + (ui.sBuy === it.id
+          ? '<div class="inf" style="margin-top:10px"><div class="rdate" style="margin-bottom:6px">Нэмж худалдаж авах · '
+            + 'одоогийн өртөг '+fmt(it.cost||0)+' · үлдэгдэл '+nd(lf)+' ш</div>'
+            + buyFields('sb', it.cost||0, lastSup(it) ? lastSup(it).name : '')
+            + '<div class="btns" style="margin-top:8px"><button class="btn" onclick="restock(\''+it.id+'\')">Нэмэх</button>'
+            + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>'
+          : '')
       + (ui.sSell === it.id ? moveForm(it, 'sell') : '')
       + (ui.sJob === it.id ? moveForm(it, 'job') : '')
       + (ui.sMoves === it.id ? movesBox(it) : '')
       + (ui.sDel === it.id
           ? confirmBox(esc(it.name)+' — устгах уу? Гүйлгээний түүх нь ч устана. '
-              + 'Ажил дээр бүртгэгдсэн зардал үлдэнэ.', "delStock('"+it.id+"')")
+              + 'Ажил дээр бүртгэгдсэн зардал үлдэнэ.'
+              + ((it.buys||[]).some(b=>b.sup) ? ' Нийлүүлэгчийн өглөгөөс энэ худалдан авалт хасагдана.' : ''),
+              "delStock('"+it.id+"')")
           : '')
       + '</div>';
   });
@@ -2173,6 +2382,7 @@ function stockView(){
       + '<div style="display:flex;gap:8px">'
       + '<input id="snQty" inputmode="decimal" placeholder="Ширхэг">'
       + '<input id="snCost" inputmode="numeric" oninput="liveNum(this)" placeholder="Нэгж өртөг (₮)"></div>'
+      + supFields('sn')
       + '<div class="btns" style="margin-top:8px"><button class="btn" onclick="addStock()">Нэмэх</button>'
       + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
   } else {
@@ -2253,7 +2463,7 @@ function allMovesBox(L){
   let h = '<div class="inf" style="margin-top:4px">';
   let last = '';
   L.forEach(x => {
-    const it = x.it, m = x.m, c = it.cost || 0, q = m.qty || 0;
+    const it = x.it, m = x.m, c = mvCost(it, m), q = m.qty || 0;
     const buy = c*q, sell = (m.price||0)*q, pf = sell - buy;
     tb += buy; ts += sell;
     if(m.type === 'sell'){ sb += buy; ss += sell; ns++; } else { jb += buy; js_ += sell; nj++; }
@@ -2287,12 +2497,11 @@ function allMovesBox(L){
 
 function movesBox(it){
   const L = (it.moves||[]).slice().sort((a,b)=> a.date<b.date?1:-1);
-  const c = it.cost || 0;
   let tq = 0, tb = 0, ts = 0;
   let h = '<div class="inf" style="margin-top:10px">';
   L.forEach(m => {
     const j = jobs.find(x=>x.id===m.jobId);
-    const q = m.qty || 0, buy = c*q, sell = (m.price||0)*q, pf = sell - buy;
+    const q = m.qty || 0, buy = mvCost(it, m)*q, sell = (m.price||0)*q, pf = sell - buy;
     tq += q; tb += buy; ts += sell;
     h += '<div style="padding:8px 0;border-bottom:1px solid #EFF2EE">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
@@ -2323,8 +2532,13 @@ function addStock(){
   const c = num((document.getElementById('snCost')||{}).value||'') || 0;
   if(!name){ alert('Нэрээ оруулна уу.'); return; }
   if(!(q > 0)){ alert('Ширхэгийн тоог оруулна уу.'); return; }
-  stock.push({id: uid(), name: name, qty: q, cost: c, moves: [], owner: admin||me});
-  saveStock(); ui = {}; render();
+  const b = readSup('sn');
+  const it = {id: uid(), name: name, qty: q, cost: c, moves: [], buys: [], owner: admin||me};
+  const sid = b.name ? supIdOf(b.name) : '';
+  it.buys.push({id: uid(), date: b.date, qty: q, cost: c, sup: sid});
+  if(sid && b.paid && q*c > 0) payTo(sid, q*c, b.date, name);
+  stock.push(it);
+  saveStock(); saveSup(); ui = {}; render();
 }
 
 function saveStockItem(id){
@@ -2361,11 +2575,11 @@ function doMove(id, kind){
     j.expenses.push({id: eid, desc: 'Материал \u2014 '+it.name+' ('+nd(q)+' ш × '+fmt(pr)+')',
       amount: q*pr, date: dt, cat: 'mat', asset: false, by: me||''});
     it.moves = it.moves || [];
-    it.moves.push({id: uid(), type:'job', qty: q, price: pr, date: dt, jobId: jobId, expenseId: eid});
+    it.moves.push({id: uid(), type:'job', qty: q, price: pr, cost: it.cost||0, date: dt, jobId: jobId, expenseId: eid});
     save();
   } else {
     it.moves = it.moves || [];
-    it.moves.push({id: uid(), type:'sell', qty: q, price: pr, date: dt});
+    it.moves.push({id: uid(), type:'sell', qty: q, price: pr, cost: it.cost||0, date: dt});
   }
   saveStock(); ui = {}; render();
 }
@@ -3587,7 +3801,7 @@ function boot(){
   F.onAuthStateChanged(F.auth, u => {
     me = u ? (u.email||'').toLowerCase() : null;
     jobs = []; roster = []; stock = []; shadow = {}; rshadow = {}; sshadow = {}; admin = null;
-    overhead = []; oshadow = {}; cpYear = null;
+    overhead = []; oshadow = {}; cpYear = null; sups = []; supShadow = {};
     matUsers = [];
     booted = !me; ui = {}; openId = null; view = 'list';
     if(!me){ render(); return; }
