@@ -2294,8 +2294,24 @@ function stockView(){
   const prof = stock.reduce((t,x)=>t+stockProfit(x), 0);
   const sold = stock.reduce((t,x)=>t+stockSold(x), 0);
 
-  let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Материал</h2></div>'
-    + '<div class="hero"><div style="font-size:13px;opacity:.6">Материалын бүртгэл</div>'
+  let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Материал</h2>'
+    + (ui.sAdd ? '' : '<button class="btn sm" onclick="ui={sAdd:1};render()">'+IC.plus+'Материал нэмэх</button>')
+    + '</div>';
+  if(ui.sAdd){
+    h += '<div class="card" style="margin-bottom:14px">'
+      + '<h2 style="margin:0;font-size:15.5px;font-weight:700">Шинэ материал</h2>'
+      + '<label class="fl" for="snName">Нэр</label>'
+      + '<input id="snName" placeholder="Материал / тоног төхөөрөмжийн нэр">'
+      + '<div style="display:flex;gap:10px">'
+      + '<div style="flex:1;min-width:0"><label class="fl" for="snQty">Ширхэг</label>'
+      + '<input id="snQty" inputmode="decimal" placeholder="0"></div>'
+      + '<div style="flex:1;min-width:0"><label class="fl" for="snCost">Нэгж өртөг (₮)</label>'
+      + '<input id="snCost" inputmode="numeric" oninput="liveNum(this)" placeholder="0"></div></div>'
+      + supFields('sn')
+      + '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="addStock()">Нэмэх</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  }
+  h += '<div class="hero"><div style="font-size:13px;opacity:.6">Материалын бүртгэл</div>'
     + '<div class="pairs">'
     + '<div class="pair"><div class="plabel">Үлдэгдлийн өртөг</div>'
     + '<div class="pval" style="color:#8FD3AE">'+fmt(left)+'</div></div>'
@@ -2376,18 +2392,6 @@ function stockView(){
       + '</div>';
   });
 
-  if(ui.sAdd){
-    h += '<div class="inf">'
-      + '<input id="snName" placeholder="Материал / тоног төхөөрөмжийн нэр">'
-      + '<div style="display:flex;gap:8px">'
-      + '<input id="snQty" inputmode="decimal" placeholder="Ширхэг">'
-      + '<input id="snCost" inputmode="numeric" oninput="liveNum(this)" placeholder="Нэгж өртөг (₮)"></div>'
-      + supFields('sn')
-      + '<div class="btns" style="margin-top:8px"><button class="btn" onclick="addStock()">Нэмэх</button>'
-      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
-  } else {
-    h += '<button class="btn" style="margin-top:8px" onclick="ui={sAdd:1};render()">+ Материал нэмэх</button>';
-  }
 
   if(isAdmin()){
     const others = knownEmails().filter(x => x !== admin);
