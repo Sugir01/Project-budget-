@@ -2914,7 +2914,7 @@ function paidHistBox(r){
       days: wage.reduce((s,p)=>s+(p.days||0), 0),
       last: dates.length ? dates[dates.length-1] : ''});
   });
-  const mp = matPaidOf(r);
+  const mp = canMat() ? matPaidOf(r) : 0;
   if(mp > 0){
     const ds = (r.mpays||[]).map(p=>p.date).filter(Boolean).sort();
     rows.push({name: 'Материалын борлуулалт', wa: 0, ba: mp, days: 0, last: ds.length ? ds[ds.length-1] : ''});
@@ -2960,7 +2960,8 @@ function rosterStats(r){
     due += d;
     if(d > 0) open.push({name: j.name, amt: d, days: wkDays(j,w.id) - wkPaidDays(j,w.id)});
   });
-  const mEarn = matEarnedOf(r), mPaid = matPaidOf(r);
+  // борлуулалтын урамшууллыг зөвхөн материалын эрхтэй хүн харна
+  const mEarn = canMat() ? matEarnedOf(r) : 0, mPaid = canMat() ? matPaidOf(r) : 0;
   return {days, paid, njobs, due, bonus, bonDue, open, lead, mEarn: mEarn, mPaid: mPaid, mDue: Math.max(0, mEarn - mPaid)};
 }
 
