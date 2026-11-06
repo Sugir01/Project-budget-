@@ -1374,6 +1374,62 @@ const supBought = sid => stock.reduce((t,it) => t + (it.buys||[]).filter(b=>b.su
 const supPaid = x => (x.pays||[]).reduce((t,p)=>t+(p.amount||0), 0);
 const supOwe = x => supBought(x.id) - supPaid(x);
 const supOweAll = () => sups.reduce((t,x)=>t+Math.max(0, supOwe(x)), 0);
+// нийлүүлэгчийн өглөгийг материал тус бүрээр: тодорхой хуваарилсан төлбөр + хуваарилаагүйг эхэнд авснаас нь
+function supLedger(x){
+  const rows = [];
+  stock.forEach(it => {
+    const B = (it.buys||[]).filter(b => b.sup === x.id);
+    if(!B.length) return;
+    rows.push({it: it, qty: B.reduce((t,b)=>t+(b.qty||0), 0),
+               bought: B.reduce((t,b)=>t+(b.qty||0)*(b.cost||0), 0),
+               date: B.map(b=>b.date||'').sort()[0] || '', paid: 0});
+  });
+  let free = 0;
+  (x.pays||[]).forEach(p => {
+    if(p.alloc && p.alloc.length){
+      let rest = p.amount||0;
+      p.alloc.forEach(a => {
+        const r = rows.find(r => r.it.id === a.item), v = a.amt||0;
+        if(r) r.paid += v; else free += v;
+        rest -= v;
+      });
+      if(rest > 0.5) free += rest;
+    } else {
+      free += p.amount||0;
+    }
+  });
+  rows.sort((a,b) => a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
+  rows.forEach(r => {
+    const use = Math.min(Math.max(0, r.bought - r.paid), free);
+    r.paid += use; free -= use;
+  });
+  rows.forEach(r => { r.owe = Math.max(0, r.bought - r.paid); });
+  return {rows: rows, credit: free};
+}
+// нэг материалын бүх нийлүүлэгчид үлдсэн өглөг
+function itemOwe(it){
+  const ids = [];
+  (it.buys||[]).forEach(b => { if(b.sup && ids.indexOf(b.sup) < 0) ids.push(b.sup); });
+  return ids.reduce((t,sid) => {
+    const x = sups.find(y=>y.id===sid); if(!x) return t;
+    const r = supLedger(x).rows.find(r => r.it.id === it.id);
+    return t + (r ? r.owe : 0);
+  }, 0);
+}
+function paySum(){
+  let t = 0;
+  document.querySelectorAll('input[data-pa]').forEach(el => { t += num(el.value||'') || 0; });
+  const o = document.getElementById('paTot'); if(o) o.textContent = fmt(t);
+  const b = document.getElementById('paBtn'); if(b) b.textContent = 'Олгох · ' + fmt(t);
+}
+function fillPay(iid, v){
+  const el = document.getElementById('pa_'+iid);
+  if(el){ el.value = group(v); paySum(); }
+}
+function fillPayAll(){
+  document.querySelectorAll('input[data-pa]').forEach(el => { el.value = group(+el.getAttribute('data-max')); });
+  paySum();
+}
 function lastSup(it){
   const L = (it.buys||[]).filter(b=>b.sup);
   if(!L.length) return null;
@@ -1387,10 +1443,12 @@ function supIdOf(name){
   if(!x){ x = {id: uid(), name: name, pays: [], owner: admin||me}; sups.push(x); }
   return x.id;
 }
-function payTo(sid, amt, date, note){
+function payTo(sid, amt, date, note, alloc){
   const x = sups.find(y=>y.id===sid); if(!x) return;
   x.pays = x.pays || [];
-  x.pays.push({id: uid(), date: date || today(), amount: amt, note: note||'', by: me||''});
+  const p = {id: uid(), date: date || today(), amount: amt, note: note||'', by: me||''};
+  if(alloc && alloc.length) p.alloc = alloc;
+  x.pays.push(p);
 }
 function supFields(pf, supName){
   return '<label class="fl" for="'+pf+'Sup">Нийлүүлэгч (худалдаж авсан газар)</label>'
@@ -1430,16 +1488,29 @@ function restock(id){
   const sid = b.name ? supIdOf(b.name) : '';
   it.buys = it.buys || [];
   it.buys.push({id: uid(), date: b.date, qty: q, cost: c, sup: sid});
-  if(sid && b.paid && q*c > 0) payTo(sid, q*c, b.date, it.name);
+  if(sid && b.paid && q*c > 0) payTo(sid, q*c, b.date, it.name, [{item: it.id, amt: q*c}]);
   saveStock(); saveSup(); ui = {}; render();
 }
 function paySup(sid){
   const x = sups.find(y=>y.id===sid); if(!x || !isAdmin()) return;
-  const amt = num((document.getElementById('spAmt')||{}).value||'');
   const dt = (document.getElementById('spDate')||{}).value || today();
-  if(!(amt > 0)){ alert('Олгох дүнгээ оруулна уу.'); return; }
-  payTo(sid, amt, dt, '');
-  saveSup(); ui = {supHist: sid}; render();
+  const led = supLedger(x);
+  const alloc = [];
+  let bad = '';
+  document.querySelectorAll('input[data-pa]').forEach(el => {
+    const v = num(el.value||'') || 0;
+    if(!(v > 0)) return;
+    const iid = el.getAttribute('data-pa');
+    const r = led.rows.find(r => r.it.id === iid);
+    if(!r) return;
+    if(v > r.owe + 0.5) bad = r.it.name+' — өглөг '+fmt(r.owe)+'-с их байна.';
+    alloc.push({item: iid, amt: v});
+  });
+  if(bad){ alert(bad); return; }
+  const tot = alloc.reduce((t,a)=>t+a.amt, 0);
+  if(!(tot > 0)){ alert('Материал дээр олгох дүнгээ бичнэ үү.'); return; }
+  payTo(sid, tot, dt, '', alloc);
+  saveSup(); ui = {}; render();
 }
 function delSupPay(sid, pid){
   const x = sups.find(y=>y.id===sid); if(!x || !isAdmin()) return;
@@ -1467,26 +1538,57 @@ function supView(){
   }
   L.forEach(x => {
     const bo = supBought(x.id), pa = supPaid(x), ow = bo - pa;
+    const led = supLedger(x);
     h += '<div class="card" style="padding:14px 16px 16px;margin-bottom:10px">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
       + '<div style="min-width:0"><div style="font-size:16.5px;font-weight:700">'+esc(x.name)+'</div>'
       + '<div class="sub" style="margin-top:3px">Авсан '+fmt(bo)+' · Төлсөн '+fmt(pa)+'</div></div>'
       + '<div style="text-align:right;flex:none"><div class="mlabel">'+(ow<0 ? 'Илүү төлсөн' : 'Өглөг')+'</div>'
       + '<div style="font-size:19px;font-weight:700;color:'+(ow>0?'var(--bad)':'var(--good)')+'">'+fmt(Math.abs(ow))+'</div></div></div>'
-      + '<div style="display:flex;justify-content:flex-end;margin-top:4px">'
+    if(isAdmin() && ui.supPay === x.id){
+      const open = led.rows.filter(r => r.owe > 0);
+      h += '<div class="inf" style="margin-top:10px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">'
+        + '<span style="font-size:13.5px;font-weight:600">Материал бүр дээр олгох дүн</span>'
+        + (open.length > 1 ? '<button class="small" onclick="fillPayAll()">Бүгдийг бүтэн</button>' : '')+'</div>';
+      open.forEach(r => {
+        h += '<div style="padding:10px 0;border-bottom:1px solid #E3E8E4">'
+          + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'
+          + '<span style="font-size:14.5px;font-weight:600;min-width:0">'+esc(r.it.name)+'</span>'
+          + '<span style="font-size:13px;color:var(--bad);white-space:nowrap">өглөг '+fmt(r.owe)+'</span></div>'
+          + '<div class="rdate">'+nd(r.qty)+' ш · авсан '+fmt(r.bought)+' · төлсөн '+fmt(r.paid)+'</div>'
+          + '<div style="display:flex;gap:8px;margin-top:6px">'
+          + '<input id="pa_'+r.it.id+'" data-pa="'+r.it.id+'" data-max="'+r.owe+'" inputmode="numeric" '
+          + 'oninput="liveNum(this);paySum()" placeholder="0" aria-label="'+esc(r.it.name)+' олгох дүн" style="flex:1;min-width:0">'
+          + '<button class="small" style="flex:none" onclick="fillPay(\''+r.it.id+'\','+r.owe+')">Бүтэн</button></div></div>';
+      });
+      h += '<label class="fl" for="spDate">Огноо</label>'
+        + '<input id="spDate" type="date" value="'+today()+'">'
+        + '<div class="total" style="padding:10px 12px;margin:10px 0 0"><span style="font-size:13.5px">Нийт олгох</span>'
+        + '<b id="paTot" style="font-size:16px">0₮</b></div>'
+        + '<div class="btns" style="margin-top:10px"><button id="paBtn" class="btn" style="background:var(--good)" '
+        + 'onclick="paySup(\''+x.id+'\')">Олгох · 0₮</button>'
+        + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+    }
+    // материал тус бүрийн үлдэгдэл өглөг
+    if(led.rows.length && ui.supPay !== x.id){
+      h += '<div class="lrows" style="margin:12px 0 0">';
+      led.rows.forEach(r => {
+        h += '<div class="erow" style="padding-right:14px"><div class="bd">'
+          + '<div class="ds" style="font-size:14.5px">'+esc(r.it.name)+'</div>'
+          + '<div class="mt">'+nd(r.qty)+' ш · авсан '+fmt(r.bought)+' · төлсөн '+fmt(r.paid)+'</div></div>'
+          + (r.owe > 0
+              ? '<span style="text-align:right;flex:none"><span style="display:block;font-size:11.5px;color:var(--muted)">өглөг</span>'
+                + '<b style="color:var(--bad);font-size:15px;white-space:nowrap">'+fmt(r.owe)+'</b></span>'
+              : '<span style="color:var(--good);font-size:13px;font-weight:600;white-space:nowrap">төлөгдсөн ✓</span>')
+          + '</div>';
+      });
+      h += '</div>';
+    }
+    h += '<div style="display:flex;justify-content:flex-end;margin-top:4px">'
       + '<button class="lnk" onclick="ui={supHist:'+(ui.supHist===x.id?'0':'\''+x.id+'\'')+'};render()">Түүх '
       + (ui.supHist===x.id ? '⌃' : '›')+'</button></div>';
-    if(isAdmin() && ui.supPay === x.id){
-      h += '<div class="inf" style="margin-top:6px">'
-        + '<div style="display:flex;gap:10px">'
-        + '<div style="flex:1;min-width:0"><label class="fl" for="spAmt" style="margin-top:0">Олгох дүн (₮)</label>'
-        + '<input id="spAmt" inputmode="numeric" oninput="liveNum(this)" value="'+(ow>0?group(ow):'')+'"></div>'
-        + '<div style="flex:1;min-width:0"><label class="fl" for="spDate" style="margin-top:0">Огноо</label>'
-        + '<input id="spDate" type="date" value="'+today()+'"></div></div>'
-        + '<div class="rdate" style="margin-top:6px">Хэсэгчлэн олгож болно. Олгосон дүн өглөгөөс хасагдана.</div>'
-        + '<div class="btns" style="margin-top:8px"><button class="btn" style="background:var(--good)" onclick="paySup(\''+x.id+'\')">Олгох</button>'
-        + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
-    } else if(isAdmin() && ow > 0){
+    if(isAdmin() && ow > 0 && ui.supPay !== x.id){
       h += '<button class="btn" style="background:var(--good);margin-top:8px;min-height:46px" '
         + 'onclick="ui={supPay:\''+x.id+'\'};render()">Олгох · '+fmt(ow)+'</button>';
     }
@@ -1496,7 +1598,10 @@ function supView(){
         if(b.sup === x.id) ev.push({d: b.date||'', t: 'buy', txt: esc(it.name)+' · '+nd(b.qty)+' ш × '+fmt(b.cost), v: (b.qty||0)*(b.cost||0)});
       }));
       (x.pays||[]).forEach(p => ev.push({d: p.date||'', t: 'pay', id: p.id,
-        txt: 'Төлбөр олгосон'+(p.note ? ' · '+esc(p.note) : ''), v: p.amount||0}));
+        txt: 'Төлбөр олгосон' + ((p.alloc && p.alloc.length)
+          ? ' · ' + p.alloc.map(a => { const it = stock.find(y=>y.id===a.item);
+              return esc(it ? it.name : 'устгасан материал')+' '+fmt(a.amt); }).join(', ')
+          : (p.note ? ' · '+esc(p.note) : '')), v: p.amount||0}));
       ev.sort((a,b)=> a.d < b.d ? 1 : (a.d > b.d ? -1 : (a.t==='pay' ? -1 : 1)));
       h += '<div class="lrows" style="margin:10px 0 0">';
       if(!ev.length) h += '<div class="note" style="padding:12px 14px">Түүх алга.</div>';
@@ -2362,7 +2467,10 @@ function stockView(){
       + '<div class="pval '+(pf<0?'neg':'pos')+'">'+fmt(pf)+'</div></div></div>'
       + '<div class="sub" style="margin:0 0 10px">Нийт '+nd(it.qty||0)+' ш · гарсан '+nd(movedQty(it))+' ш'
       + ((it.moves||[]).length ? ' · '+(it.moves||[]).length+' гүйлгээ' : '')
-      + (lastSup(it) ? '<br>Нийлүүлэгч: '+esc(lastSup(it).name) : '')+'</div>'
+      + (lastSup(it) ? '<br>Нийлүүлэгч: '+esc(lastSup(it).name)
+          + (itemOwe(it) > 0 ? ' · <span style="color:var(--bad);font-weight:600">өглөг '+fmt(itemOwe(it))+'</span>'
+                             : ((it.buys||[]).some(b=>b.sup) ? ' · <span style="color:var(--good)">төлөгдсөн</span>' : ''))
+          : '')+'</div>'
       + '<div style="display:flex;gap:7px;flex-wrap:wrap">'
       + (lf > 0 ? '<button class="small" style="border-color:#BBD4C4;color:var(--good)" '
           + 'onclick="ui={sSell:\''+it.id+'\'};render()">Зарах</button>'
@@ -2540,7 +2648,7 @@ function addStock(){
   const it = {id: uid(), name: name, qty: q, cost: c, moves: [], buys: [], owner: admin||me};
   const sid = b.name ? supIdOf(b.name) : '';
   it.buys.push({id: uid(), date: b.date, qty: q, cost: c, sup: sid});
-  if(sid && b.paid && q*c > 0) payTo(sid, q*c, b.date, name);
+  if(sid && b.paid && q*c > 0) payTo(sid, q*c, b.date, name, [{item: it.id, amt: q*c}]);
   stock.push(it);
   saveStock(); saveSup(); ui = {}; render();
 }
