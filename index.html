@@ -363,6 +363,7 @@ function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setIt
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
+let cpOpenM = false, cpOpenD = false;
 let sups = [], supShadow = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
@@ -1297,6 +1298,57 @@ function ohHint(pct){
       + '% · компанийн хувь үүнийг нөхөж байна.</div>';
 }
 
+// оны эхнээс хуримтлагдсан ашгийн шугаман график
+function cumChart(r, y, cur){
+  const last = (y === cur) ? parseInt(today().slice(5,7),10) - 1 : 11;
+  const net = [], cum = [];
+  let c = 0;
+  for(let i = 0; i <= last; i++){
+    const x = r.mo[y+'-'+String(i+1).padStart(2,'0')];
+    const n = x ? x.job + x.mat - x.oh : 0;
+    net.push(n); c += n; cum.push(c);
+  }
+  if(!Object.keys(r.mo).length) return '';
+  const W = 340, H = 168, L = 34, R = 10, T = 14, B = 22;
+  let hi = Math.max(0, ...cum), lo = Math.min(0, ...cum);
+  if(hi === lo) hi = lo + 1000000;
+  const span = hi - lo;
+  const steps = [1e5,2e5,5e5,1e6,2e6,5e6,1e7,2e7,5e7,1e8,2e8,5e8,1e9];
+  const step = steps.find(v => span / v <= 4) || steps[steps.length-1];
+  hi = Math.ceil(hi / step) * step; lo = Math.floor(lo / step) * step;
+  const yy = v => T + (H - T - B) * (hi - v) / (hi - lo);
+  const xx = i => L + (W - L - R) * i / 11;
+  const lab = v => { const a = v / 1e6; return (Math.round(a*10)/10) + 'с'; };
+  let s = '<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="Оны эхнээс хуримтлагдсан ашиг" style="display:block;margin-top:8px">';
+  for(let v = lo; v <= hi + 1; v += step){
+    s += '<line x1="'+L+'" x2="'+(W-R)+'" y1="'+yy(v)+'" y2="'+yy(v)+'" stroke="'+(v === 0 ? '#8E9AA0' : '#EEF1ED')+'"/>'
+      + '<text x="'+(L-5)+'" y="'+(yy(v)+3)+'" font-size="9.5" fill="#7D8A90" text-anchor="end">'+lab(v)+'</text>';
+  }
+  const pts = cum.map((v,i) => xx(i)+','+yy(v)).join(' ');
+  s += '<polygon points="'+xx(0)+','+yy(0)+' '+pts+' '+xx(cum.length-1)+','+yy(0)+'" fill="#E3EFE7" opacity=".85"/>'
+    + '<polyline points="'+pts+'" fill="none" stroke="#2F6B4F" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  cum.forEach((v,i) => {
+    s += '<circle cx="'+xx(i)+'" cy="'+yy(v)+'" r="'+(i === last ? 5 : 3.2)+'" fill="'+(net[i] < 0 ? '#C9412F' : '#2F6B4F')
+      + '" stroke="#fff" stroke-width="1.5"/>';
+  });
+  for(let i = 0; i < 12; i++){
+    s += '<text x="'+xx(i)+'" y="'+(H-6)+'" font-size="10" fill="'+(i === last ? '#1B2A33' : (i > last ? '#B8C1C4' : '#7D8A90'))
+      + '" font-weight="'+(i === last ? '700' : '400')+'" text-anchor="middle">'+(i+1)+'</text>';
+  }
+  s += '</svg>';
+  const tot = cum[cum.length-1];
+  return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
+    + '<span style="font-weight:700;font-size:15px">Оны эхнээс хуримтлагдсан ашиг</span></div>'
+    + '<div style="display:flex;align-items:baseline;gap:8px;margin-top:4px">'
+    + '<span style="font-size:24px;font-weight:700" class="'+(tot<0?'neg':'pos')+'">'+fmt(tot)+'</span>'
+    + '<span class="rdate">'+(last+1)+'-р сар хүртэл</span></div>'
+    + s
+    + '<div style="display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px">'
+    + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2F6B4F;margin-right:5px"></i>ашигтай сар</span>'
+    + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#C9412F;margin-right:5px"></i>алдагдалтай сар</span></div>'
+    + '</div>';
+}
+
 function coProfView(){
   const cur = parseInt(today().slice(0,4),10);
   const y = cpYear || cur;
@@ -1320,6 +1372,8 @@ function coProfView(){
     + '<div class="pair"><div class="plabel">Ажил + материалаас</div><div class="pval pos">'+fmt(r.jobP + r.matP)+'</div></div>'
     + '<div class="pair"><div class="plabel">Байгууллагын зардал</div>'
     + '<div class="pval" style="color:#F4A99C">'+fmt(r.ohT)+'</div></div></div></div>';
+
+  h += cumChart(r, y, cur);
 
   h += '<div class="card"><div class="calc" style="margin:0">'
     + '<div class="ln"><span>Дууссан '+r.doneY.length+' ажлаас компанид</span><b>'+fmt(r.jobP)+'</b></div>'
@@ -1349,19 +1403,35 @@ function coProfView(){
 
   const ks = Object.keys(r.mo).sort().reverse();
   if(ks.length){
-    h += '<div class="lhd"><h2>Сараар</h2></div><div class="lrows">';
+    h += '<div class="sect" style="margin-top:14px">'
+      + '<button class="hd" onclick="cpOpenM=!cpOpenM;render()" aria-expanded="'+cpOpenM+'">'
+      + '<span>Сараар <span class="cnt">· '+ks.length+' сар</span></span>'
+      + '<span class="arw'+(cpOpenM?' op':'')+'">›</span></button>';
+    if(cpOpenM){
+    h += '<div style="border-top:1px solid #EEF1ED">';
+    const mxN = Math.max(1, ...ks.map(k => Math.abs(r.mo[k].job + r.mo[k].mat - r.mo[k].oh)));
     ks.forEach(k => {
       const x = r.mo[k], n = x.job + x.mat - x.oh;
       h += '<div class="erow" style="padding-right:14px"><div class="bd">'
         + '<div class="ds">'+MONN[parseInt(k.slice(5,7),10)-1]+'</div>'
-        + '<div class="mt">Ажил '+fmt(x.job)+(x.mat ? ' · Материал '+fmt(x.mat) : '')+' · Зардал '+fmt(x.oh)+'</div></div>'
+        + '<div class="mt">Ажил '+fmt(x.job)+(x.mat ? ' · Материал '+fmt(x.mat) : '')+' · Зардал '+fmt(x.oh)+'</div>'
+        + '<div style="height:5px;border-radius:3px;background:#EEF1ED;margin-top:6px;overflow:hidden">'
+        + '<i style="display:block;height:100%;border-radius:3px;width:'+Math.max(2, Math.abs(n)/mxN*100)+'%;'
+        + 'background:'+(n<0?'#D9705F':'#4E9A73')+'"></i></div></div>'
         + '<span class="am '+(n<0?'neg':'pos')+'">'+fmt(n)+'</span></div>';
     });
+    h += '</div>';
+    }
     h += '</div>';
   }
 
   if(r.doneY.length){
-    h += '<div class="lhd"><h2>Дууссан ажлууд</h2><span>'+r.doneY.length+'</span></div><div class="lrows">';
+    h += '<div class="sect">'
+      + '<button class="hd" onclick="cpOpenD=!cpOpenD;render()" aria-expanded="'+cpOpenD+'">'
+      + '<span>Дууссан ажлууд <span class="cnt">· '+r.doneY.length+' ажил · '+fmt(r.jobP)+'</span></span>'
+      + '<span class="arw'+(cpOpenD?' op':'')+'">›</span></button>';
+    if(cpOpenD){
+    h += '<div style="border-top:1px solid #EEF1ED">';
     r.doneY.slice().sort((a,b)=> (a.doneDate||'') < (b.doneDate||'') ? 1 : -1).forEach(j => {
       const c = bonusCalc(j, j.workers||[]), v = coProfit(j);
       const how = (c.totalDays > 0 && c.pool > 0) ? 'гэрээ × '+c.pct+'%' : 'ажлын бүтэн ашиг';
@@ -1370,6 +1440,8 @@ function coProfView(){
         + '<div class="mt">'+shortDate(j.doneDate)+' · '+how+'</div></div>'
         + '<span class="am '+(v<0?'neg':'pos')+'">'+fmt(v)+'</span></div>';
     });
+    h += '</div>';
+    }
     h += '</div>';
   } else {
     h += '<div class="note">'+y+' онд дууссан ажил алга.</div>';
