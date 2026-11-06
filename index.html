@@ -359,6 +359,7 @@ let bonPick = {};
 let lastW = '', lastT = '', lastD = '';
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
+let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
 const fmt = n => new Intl.NumberFormat('mn-MN',{maximumFractionDigits:0}).format(Math.round(n||0)) + '\u20AE';
@@ -481,6 +482,25 @@ function toggleMat(em){
   saveMatUsers(); render();
 }
 
+function saveOH(){
+  if(!me || !window.FB || !isAdmin()) return;
+  overhead.forEach(o => {
+    const cur = JSON.stringify(o);
+    if(oshadow[o.id] === cur) return;
+    oshadow[o.id] = cur;
+    try {
+      FB.setDoc(FB.doc(FB.db, 'overhead', o.id), clean({...o, owner: admin || me}))
+        .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
+    } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
+  });
+  Object.keys(oshadow).forEach(id => {
+    if(!overhead.some(x => x.id === id)){
+      delete oshadow[id];
+      try { FB.deleteDoc(FB.doc(FB.db, 'overhead', id)).catch(()=>{}); } catch(e) {}
+    }
+  });
+}
+
 function saveStock(){
   if(!me || !window.FB || !canMat()) return;
   stock.forEach(it => {
@@ -549,6 +569,17 @@ function subscribe(){
     },
     ()=>{}
   );
+  if(isAdmin()){
+    F.onSnapshot(
+      F.query(F.collection(F.db, 'overhead'), F.where('owner', '==', admin || me)),
+      snap => {
+        overhead = snap.docs.map(d => ({...d.data(), id: d.id}));
+        oshadow = {}; overhead.forEach(x => oshadow[x.id] = JSON.stringify(x));
+        cloudRender();
+      },
+      ()=>{}
+    );
+  }
   F.onSnapshot(
     F.query(F.collection(F.db, 'stock'), F.where('owner', '==', admin || me)),
     snap => {
@@ -790,7 +821,7 @@ const stChip = st => '<span class="st '+st.k+'"><i></i>'+st.t+'</span>';
 
 function navCur(){
   if(openId && jobs.some(j=>j.id===openId)) return view === 'list' ? 'list' : 'more';
-  if(['assets','types','done','more'].indexOf(view) >= 0) return 'more';
+  if(['assets','types','done','more','oh','coprof'].indexOf(view) >= 0) return 'more';
   if(view === 'roster') return 'roster';
   if(view === 'stock' && canMat()) return 'stock';
   return 'list';
@@ -889,6 +920,14 @@ function moreView(){
   let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Бусад</h2></div><div class="lrows">';
   if(isAdmin()) h += row('Үндсэн хөрөнгө', fmt(allA), "view='assets';ui={};render()", 'var(--asset)');
   if(isAdmin()) h += row('Ажлын төрлөөр', 'Угсралт / Зураг төсөл', "view='types';ui={};render()");
+  if(isAdmin()){
+    const td = today();
+    const ohM = ohEntries().filter(e => e.date.slice(0,7) === td.slice(0,7)).reduce((t,e)=>t+e.amount, 0);
+    const cy = coYear(td.slice(0,4));
+    h += row('Байгууллагын зардал', 'энэ сар '+fmt(ohM), "view='oh';ui={};render()");
+    h += row('Компанийн ашиг', td.slice(0,4)+' · '+fmt(cy.net), "view='coprof';cpYear=null;ui={};render()",
+             cy.net < 0 ? 'var(--bad)' : 'var(--good)');
+  }
   h += row('Дууссан ажил', done.length+' ажил', "view='done';ui={};render()");
   h += '</div>';
   h += '<div class="card"><div class="mlabel">Нэвтэрсэн</div>'
@@ -992,6 +1031,307 @@ function settingsCard(j){
     + memberBox(j) + '</div>';
 }
 
+
+// ---------- байгууллагын зардал ----------
+const OCATS = [
+  {k:'acc',    t:'Нягтлан/аудит',   c:'#2A5F7A'},
+  {k:'lic',    t:'Тусгай зөвшөөрөл', c:'#8A6A1F'},
+  {k:'office', t:'Оффис түрээс',     c:'#6B4C8A'},
+  {k:'comm',   t:'Холбоо/интернэт',  c:'#C0762F'},
+  {k:'bank',   t:'Банк/даатгал',     c:'#2F6B4F'},
+  {k:'tax',    t:'Татвар/хураамж',   c:'#A33D5C'},
+  {k:'other',  t:'Бусад',            c:'#8E9AA0'}
+];
+const ocatOf = k => OCATS.find(c=>c.k===k) || OCATS[OCATS.length-1];
+const ymOf = d => String(d||'').slice(0,7);
+function addMonth(m, n){
+  let y = parseInt(m.slice(0,4),10), mo = parseInt(m.slice(5,7),10) - 1 + n;
+  y += Math.floor(mo/12); mo = ((mo % 12) + 12) % 12;
+  return y + '-' + String(mo+1).padStart(2,'0');
+}
+function recDate(o, m){
+  const dim = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5,7),10), 0).getDate();
+  return m + '-' + String(Math.min(o.day||1, dim)).padStart(2,'0');
+}
+// нэг удаагийн бичилт + сар бүрийн загвараас үүссэн бичилтүүд (өнөөдрийг хүртэл)
+function ohEntries(){
+  const out = [], td = today();
+  overhead.forEach(o => {
+    if(o.kind === 'rec'){
+      if(!/^\d{4}-\d{2}$/.test(o.from||'')) return;
+      const last = (o.until && o.until < ymOf(td)) ? o.until : ymOf(td);
+      let m = o.from, guard = 0;
+      while(m <= last && guard++ < 600){
+        if((o.skip||[]).indexOf(m) < 0){
+          const dd = recDate(o, m);
+          if(dd <= td) out.push({id: o.id+'@'+m, rid: o.id, desc: o.desc, cat: o.cat, amount: o.amount||0,
+                                 date: dd, rec: true, by: o.by});
+        }
+        m = addMonth(m, 1);
+      }
+    } else if(o.date){
+      out.push({id: o.id, desc: o.desc, cat: o.cat, amount: o.amount||0, date: o.date, rec: false, by: o.by});
+    }
+  });
+  return out.sort((a,b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
+}
+
+function pickOCat(el, k){
+  oCat = k;
+  el.parentNode.querySelectorAll('.chip').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+}
+function addOH(){
+  const g = id => (document.getElementById(id)||{}).value || '';
+  const desc = g('ohDesc').trim(), amt = num(g('ohAmt')), dt = g('ohDate') || today();
+  const recEl = document.getElementById('ohRec');
+  const rec = !!(recEl && recEl.checked);
+  if(!desc){ alert('Тайлбараа оруулна уу.'); return; }
+  if(!(amt > 0)){ alert('Дүнгээ оруулна уу.'); return; }
+  if(rec){
+    overhead.push({id: uid(), kind: 'rec', desc: desc, cat: oCat, amount: amt,
+                   day: parseInt(dt.slice(8,10),10) || 1, from: dt.slice(0,7), until: '', skip: [],
+                   by: me||'', owner: admin||me});
+  } else {
+    overhead.push({id: uid(), kind: 'one', desc: desc, cat: oCat, amount: amt, date: dt,
+                   by: me||'', owner: admin||me});
+  }
+  saveOH(); ui = {}; render();
+}
+function delOH(id){
+  const at = id.indexOf('@');
+  if(at > 0){
+    const o = overhead.find(x => x.id === id.slice(0, at));
+    if(o) o.skip = (o.skip||[]).concat([id.slice(at+1)]);
+  } else {
+    overhead = overhead.filter(x => x.id !== id);
+  }
+  saveOH(); render();
+}
+function stopRec(id){
+  const o = overhead.find(x => x.id === id); if(!o) return;
+  const td = today(), m = ymOf(td);
+  o.until = recDate(o, m) <= td ? m : addMonth(m, -1);
+  saveOH(); ui = {}; render();
+}
+function resumeRec(id){
+  const o = overhead.find(x => x.id === id); if(!o) return;
+  o.until = ''; saveOH(); ui = {}; render();
+}
+function delRec(id){
+  overhead = overhead.filter(x => x.id !== id);
+  saveOH(); ui = {}; render();
+}
+
+function ohView(){
+  const td = today(), m = ymOf(td), y = td.slice(0,4);
+  const E = ohEntries();
+  const sumBy = f => E.filter(f).reduce((t,e)=>t+e.amount, 0);
+  const recs = overhead.filter(o => o.kind === 'rec');
+
+  let h = '<button class="link" onclick="view=\'more\';ui={};render()">← Бусад</button>'
+    + '<div class="sechd" style="margin-top:0"><h2 style="font-size:22px">Байгууллагын зардал</h2>'
+    + (ui.ohAdd ? '' : '<button class="btn sm" onclick="ui={ohAdd:1};render()">'+IC.plus+'Нэмэх</button>')+'</div>'
+    + '<div class="tiles">'
+    + '<div class="tile"><div class="l">Энэ сар</div><div class="v">'+fmt(sumBy(e=>e.date.slice(0,7)===m))+'</div></div>'
+    + '<div class="tile"><div class="l">'+y+' он</div><div class="v">'+fmt(sumBy(e=>e.date.slice(0,4)===y))+'</div></div>'
+    + '</div>'
+    + '<div class="rdate" style="margin:-4px 2px 12px">Ажилд хамааралгүй зардал. Ажлын ашиг, удирдагчдын урамшуулалд '
+    + 'нөлөөлөхгүй — компанийн ашгаас хасагдана.</div>';
+
+  if(ui.ohAdd){
+    h += '<div class="card"><h2 style="margin:0;font-size:15.5px">Шинэ зардал</h2>'
+      + '<label class="fl" for="ohDesc">Тайлбар</label>'
+      + '<input id="ohDesc" placeholder="Жишээ: Нягтлангийн хөлс">'
+      + '<div style="display:flex;gap:10px">'
+      + '<div style="flex:1;min-width:0"><label class="fl" for="ohAmt">Дүн (₮)</label>'
+      + '<input id="ohAmt" inputmode="numeric" oninput="liveNum(this)" placeholder="0"></div>'
+      + '<div style="flex:1;min-width:0"><label class="fl" for="ohDate">Огноо</label>'
+      + '<input id="ohDate" type="date" value="'+td+'"></div></div>'
+      + '<div class="fl">Ангилал</div><div class="chips">' + OCATS.map(c =>
+          '<button class="chip'+(c.k===oCat?' on':'')+'" onclick="pickOCat(this,\''+c.k+'\')">'
+          + '<i class="cd" style="background:'+c.c+'"></i>'+c.t+'</button>').join('') + '</div>'
+      + '<label class="check" style="min-height:40px"><input type="checkbox" id="ohRec">Сар бүр давтах</label>'
+      + '<div class="rdate" style="margin:-6px 0 10px 28px">Огнооны өдрөөр сар бүр автоматаар нэмэгдэнэ.</div>'
+      + '<div style="display:flex;gap:8px"><button class="btn" onclick="addOH()">Нэмэх</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  }
+
+  if(recs.length){
+    h += '<div class="lhd"><h2>Сар бүрийн зардал</h2><span>'+recs.filter(o=>!o.until).length+' идэвхтэй</span></div>'
+      + '<div class="lrows">';
+    recs.forEach(o => {
+      const c = ocatOf(o.cat), on = !o.until;
+      h += '<div class="erow"'+(on ? '' : ' style="opacity:.6"')+'>'
+        + '<span class="dot" style="background:'+c.c+'"></span>'
+        + '<div class="bd"><div class="ds">'+esc(o.desc)+'</div>'
+        + '<div class="mt">'+c.t+' · сар бүрийн '+(o.day||1)+'-нд · эхэлсэн '+o.from
+        + (o.until ? ' · зогссон '+o.until : '')+'</div>'
+        + '<div style="display:flex;gap:6px;margin-top:8px">'
+        + (on ? '<button class="small" onclick="stopRec(\''+o.id+'\')">Зогсоох</button>'
+              : '<button class="small" onclick="resumeRec(\''+o.id+'\')">Сэргээх</button>'
+                + '<button class="small warn" onclick="ui={ohRecDel:\''+o.id+'\'};render()">Устгах</button>')
+        + '</div></div>'
+        + '<span class="am" style="padding-right:12px;align-self:flex-start;margin-top:2px">'+fmt(o.amount)+'</span></div>';
+      if(ui.ohRecDel === o.id){
+        h += '<div style="padding:0 14px 12px">'
+          + confirmBox(esc(o.desc)+' — бүх сарын бичилттэй нь устгах уу?', "delRec('"+o.id+"')") + '</div>';
+      }
+    });
+    h += '</div>';
+  }
+
+  if(E.length === 0 && !ui.ohAdd){
+    h += '<div class="empty">Байгууллагын зардал бүртгээгүй байна. Нягтлан, тусгай зөвшөөрөл, оффисын түрээс '
+      + 'зэрэг ажилд хамааралгүй зардлаа энд оруулна.</div>';
+    return h;
+  }
+
+  // сараар бүлэглэх
+  const cutoff = ui.ohAll ? '' : addMonth(m, -11);
+  const months = [];
+  E.forEach(e => { const k = e.date.slice(0,7); if(months.indexOf(k) < 0) months.push(k); });
+  const shown = months.filter(k => !cutoff || k >= cutoff);
+  shown.forEach(k => {
+    const L = E.filter(e => e.date.slice(0,7) === k);
+    h += '<div class="lhd"><h2>'+k.slice(0,4)+' оны '+MONN[parseInt(k.slice(5,7),10)-1]+'</h2>'
+      + '<span><b>'+fmt(L.reduce((t,e)=>t+e.amount,0))+'</b></span></div><div class="lrows">';
+    L.forEach(e => {
+      const c = ocatOf(e.cat);
+      h += '<div class="erow"><span class="dot" style="background:'+c.c+'"></span>'
+        + '<div class="bd"><div class="ds">'+esc(e.desc)+'</div>'
+        + '<div class="mt">'+c.t+' · '+shortDate(e.date)+(e.rec ? ' · сар бүр' : '')+'</div></div>'
+        + '<span class="am">−'+fmt(e.amount)+'</span>'
+        + '<button class="x" aria-label="Устгах" onclick="delOH(\''+e.id+'\')">×</button></div>';
+    });
+    h += '</div>';
+  });
+  if(months.length > shown.length){
+    h += '<button class="btn ghost" style="width:100%" onclick="ui={ohAll:1};render()">Өмнөх саруудыг харах</button>';
+  }
+  return h;
+}
+
+// ---------- компанийн ашиг ----------
+// ажлаас компанид ногдох ашиг: удирдагчтай бол гэрээ × компанийн %, үгүй бол бүтэн ашиг
+function coProfit(j){
+  const c = bonusCalc(j, j.workers||[]);
+  return c.totalDays > 0 ? c.gross - Math.max(0, c.pool) : c.gross;
+}
+function coYear(y){
+  y = String(y);
+  const doneY = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) === y);
+  const jobP = doneY.reduce((t,j)=>t+coProfit(j), 0);
+  let matP = 0;
+  const mo = {};
+  const add = (d, k, v) => { const m = d.slice(0,7); mo[m] = mo[m] || {job:0, mat:0, oh:0}; mo[m][k] += v; };
+  doneY.forEach(j => add(j.doneDate, 'job', coProfit(j)));
+  stock.forEach(it => (it.moves||[]).forEach(mv => {
+    if(String(mv.date||'').slice(0,4) !== y) return;
+    const v = ((mv.price||0) - (it.cost||0)) * (mv.qty||0);
+    matP += v; add(mv.date, 'mat', v);
+  }));
+  const E = ohEntries().filter(e => e.date.slice(0,4) === y);
+  const ohT = E.reduce((t,e)=>t+e.amount, 0);
+  E.forEach(e => add(e.date, 'oh', e.amount));
+  const contracts = doneY.reduce((t,j)=>t+j.contract, 0);
+  return {y: y, doneY: doneY, jobP: jobP, matP: matP, ohT: ohT, net: jobP + matP - ohT,
+          contracts: contracts, rate: (contracts > 0 ? ohT / contracts * 100 : null), mo: mo};
+}
+// компанийн хувь тогтооход харуулах байгууллагын зардлын хувь
+function ohRateInfo(){
+  const y = parseInt(today().slice(0,4),10);
+  for(const yy of [y, y-1]){
+    const r = coYear(yy);
+    if(r.contracts > 0 && r.ohT > 0) return r;
+  }
+  return null;
+}
+function ohHint(pct){
+  const r = ohRateInfo();
+  if(!r) return '';
+  const v = Math.round(r.rate*10)/10;
+  return pct < r.rate
+    ? '<div class="warn" style="margin:8px 0 0">Байгууллагын зардал '+r.y+' онд дууссан ажлуудын гэрээний ~'+v
+      + '% эзэлсэн. Компанийн хувь ('+pct+'%) үүнээс бага тул урамшуулал олгосны дараа компанид алдагдал '
+      + 'гарч болзошгүй.</div>'
+    : '<div class="rdate" style="margin:6px 0 0">Байгууллагын зардал '+r.y+' онд гэрээний ~'+v
+      + '% · компанийн хувь үүнийг нөхөж байна.</div>';
+}
+
+function coProfView(){
+  const cur = parseInt(today().slice(0,4),10);
+  const y = cpYear || cur;
+  const r = coYear(y);
+  const act = jobs.filter(j=>!j.done);
+  const expd = act.reduce((t,j)=>t+coProfit(j), 0);
+
+  let h = '<button class="link" onclick="view=\'more\';ui={};render()">← Бусад</button>'
+    + '<div class="sechd" style="margin-top:0"><h2 style="font-size:22px">Компанийн ашиг</h2>'
+    + '<div style="display:flex;align-items:center;gap:6px">'
+    + '<button class="small" aria-label="Өмнөх он" onclick="cpYear='+(y-1)+';render()">‹</button>'
+    + '<b style="font-size:15px;min-width:52px;text-align:center">'+y+'</b>'
+    + (y < cur ? '<button class="small" aria-label="Дараах он" onclick="cpYear='+(y+1)+';render()">›</button>'
+               : '<span style="width:38px"></span>')
+    + '</div></div>';
+
+  h += '<div class="hero" style="margin-bottom:12px">'
+    + '<div style="font-size:13px;opacity:.75">Цэвэр ашиг · '+y+' он</div>'
+    + '<div class="hbig '+(r.net<0?'neg':'pos')+'">'+fmt(r.net)+'</div>'
+    + '<div class="pairs">'
+    + '<div class="pair"><div class="plabel">Ажил + материалаас</div><div class="pval pos">'+fmt(r.jobP + r.matP)+'</div></div>'
+    + '<div class="pair"><div class="plabel">Байгууллагын зардал</div>'
+    + '<div class="pval" style="color:#F4A99C">'+fmt(r.ohT)+'</div></div></div></div>';
+
+  h += '<div class="card"><div class="calc" style="margin:0">'
+    + '<div class="ln"><span>Дууссан '+r.doneY.length+' ажлаас компанид</span><b>'+fmt(r.jobP)+'</b></div>'
+    + '<div class="ln"><span>Материалын ашиг</span><b>'+fmt(r.matP)+'</b></div>'
+    + '<div class="ln"><span>Байгууллагын зардал</span><b>−'+fmt(r.ohT)+'</b></div>'
+    + '<div class="ln tot"><span>Цэвэр ашиг</span><b class="'+(r.net<0?'neg':'pos')+'">'+fmt(r.net)+'</b></div></div>'
+    + (r.rate !== null
+        ? '<div class="rdate" style="margin-top:10px">Байгууллагын зардал дууссан ажлуудын гэрээний ('+fmt(r.contracts)
+          + ') <b style="color:var(--ink)">'+(Math.round(r.rate*10)/10)+'%</b> эзэлж байна. Ажил дээрх компанийн хувийг '
+          + 'үүнээс доош тавихгүй байх нь зүйтэй.</div>'
+        : '')
+    + '</div>';
+
+  if(y === cur && act.length){
+    h += '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
+      + '<span style="font-weight:600">Явагдаж буй '+act.length+' ажлаас хүлээгдэж буй</span>'
+      + '<b class="'+(expd<0?'neg':'pos')+'" style="white-space:nowrap">'+fmt(expd)+'</b></div>'
+      + '<div class="rdate" style="margin-top:4px">Одоогийн зардлаар тооцсон. Ажил дуусахад цэвэр ашигт орно.</div></div>';
+  }
+
+  const ks = Object.keys(r.mo).sort().reverse();
+  if(ks.length){
+    h += '<div class="lhd"><h2>Сараар</h2></div><div class="lrows">';
+    ks.forEach(k => {
+      const x = r.mo[k], n = x.job + x.mat - x.oh;
+      h += '<div class="erow" style="padding-right:14px"><div class="bd">'
+        + '<div class="ds">'+MONN[parseInt(k.slice(5,7),10)-1]+'</div>'
+        + '<div class="mt">Ажил '+fmt(x.job)+(x.mat ? ' · Материал '+fmt(x.mat) : '')+' · Зардал '+fmt(x.oh)+'</div></div>'
+        + '<span class="am '+(n<0?'neg':'pos')+'">'+fmt(n)+'</span></div>';
+    });
+    h += '</div>';
+  }
+
+  if(r.doneY.length){
+    h += '<div class="lhd"><h2>Дууссан ажлууд</h2><span>'+r.doneY.length+'</span></div><div class="lrows">';
+    r.doneY.slice().sort((a,b)=> (a.doneDate||'') < (b.doneDate||'') ? 1 : -1).forEach(j => {
+      const c = bonusCalc(j, j.workers||[]), v = coProfit(j);
+      const how = (c.totalDays > 0 && c.pool > 0) ? 'гэрээ × '+c.pct+'%' : 'ажлын бүтэн ашиг';
+      h += '<div class="erow" style="padding-right:14px"><div class="bd tap" onclick="openJob(\''+j.id+'\')">'
+        + '<div class="ds">'+esc(j.name)+'</div>'
+        + '<div class="mt">'+shortDate(j.doneDate)+' · '+how+'</div></div>'
+        + '<span class="am '+(v<0?'neg':'pos')+'">'+fmt(v)+'</span></div>';
+    });
+    h += '</div>';
+  } else {
+    h += '<div class="note">'+y+' онд дууссан ажил алга.</div>';
+  }
+  return h;
+}
+
 function toggleECat(id){ ui = (ui.eCat === id) ? {} : {eCat: id}; render(); }
 function toggleRMenu(id){ ui = (ui.rMenu === id) ? {} : {rMenu: id}; render(); }
 function filterRoster(q){
@@ -1016,6 +1356,8 @@ function render(){
   else if(view === 'types' && isAdmin()) html = typesView();
   else if(view === 'roster') html = rosterView();
   else if(view === 'stock' && canMat()) html = stockView();
+  else if(view === 'oh' && isAdmin()) html = ohView();
+  else if(view === 'coprof' && isAdmin()) html = coProfView();
   else if(view === 'more') html = moreView();
   else html = listView();
   html += bottomNav();
@@ -1366,7 +1708,8 @@ function chartSvg(j){
 function detailView(j){
   const s = spent(j), e = earned(j), av = assetVal(j), wd = wageDue(j);
   const st = jobStatus(j), t = typeOf(j.type), dates = jobDates(j);
-  const backTo = view === 'done' ? 'Дууссан ажил' : (view === 'types' ? 'Ажлын төрлөөр' : 'Ажлууд');
+  const backTo = view === 'done' ? 'Дууссан ажил' : (view === 'types' ? 'Ажлын төрлөөр'
+    : (view === 'coprof' ? 'Компанийн ашиг' : 'Ажлууд'));
   let h = '<div class="jhd">'
     + '<button class="bk" onclick="openId=null;editContract=false;ui={};render()">'+IC.back+backTo+'</button>'
     + '<h1>'+esc(j.name)+'</h1><div class="tg">'
@@ -3061,6 +3404,7 @@ function bonusBox(j, W){
     + 'oninput="document.getElementById(\'coPv\').textContent=this.value+\'%\'" '
     + 'onchange="setCoPct(this.value)" style="flex:1">'
     + '<b id="coPv" style="font-size:15px;width:44px;text-align:right">'+c.pct+'%</b></div>'
+    + ohHint(c.pct)
     + '<div class="calc">'
     + '<div class="ln"><span>Гэрээний дүн</span><b>'+fmt(j.contract)+'</b></div>'
     + '<div class="ln"><span>Нийт зардал</span><b>\u2212'+fmt(spent(j))+'</b></div>'
@@ -3243,6 +3587,7 @@ function boot(){
   F.onAuthStateChanged(F.auth, u => {
     me = u ? (u.email||'').toLowerCase() : null;
     jobs = []; roster = []; stock = []; shadow = {}; rshadow = {}; sshadow = {}; admin = null;
+    overhead = []; oshadow = {}; cpYear = null;
     matUsers = [];
     booted = !me; ui = {}; openId = null; view = 'list';
     if(!me){ render(); return; }
