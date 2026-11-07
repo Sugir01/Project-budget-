@@ -2331,7 +2331,8 @@ function detailView(j){
                 + 'padding:10px 0;border-bottom:1px solid #EFF2EE'+(on?';opacity:.55':'')+'">'
                 + '<div style="min-width:0"><div style="font-size:15px;font-weight:500;overflow:hidden;'
                 + 'text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</div>'
-                + '<div class="rdate">'+(r.role?esc(r.role)+' · ':'')+fmt(r.rate)+' / өдөр</div></div>'
+                + '<div class="rdate">'+[r.role ? esc(r.role) : '', isAdmin() ? fmt(r.rate)+' / өдөр' : '']
+                    .filter(Boolean).join(' · ')+'</div></div>'
                 + (on
                     ? '<span class="small" style="flex:none;border-color:#BBD4C4;color:var(--good);'
                       + 'pointer-events:none">✓ Нэмэгдсэн</span>'
@@ -3033,7 +3034,8 @@ function rMini(r){
   return '<button class="rmini" data-q="'+esc((r.name+' '+(r.role||'')).toLowerCase())+'" onclick="ui={rOpen:\''+r.id+'\'};render()">'
     + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
     + '<b style="font-size:15.5px">'+esc(r.name)+'</b>'
-    + '<span style="font-size:12.5px;color:var(--muted)"> · '+(r.role ? esc(r.role)+' · ' : '')+fmt(r.rate)+'/өдөр</span></span>'
+    + (function(){ const x = [r.role ? esc(r.role) : '', isAdmin() ? fmt(r.rate)+'/өдөр' : ''].filter(Boolean).join(' · ');
+        return x ? '<span style="font-size:12.5px;color:var(--muted)"> · '+x+'</span>' : ''; })()+'</span>'
     + '<span style="color:var(--muted);display:flex;flex:none">'+IC.chev+'</span></button>';
 }
 
@@ -3049,7 +3051,7 @@ function rCard(r, st){
     + '<span style="font-size:16.5px;font-weight:700">'+esc(r.name)+'</span>'
     + (r.role ? '<span class="tag" style="margin:0;background:#E6ECEF;color:var(--blue)">'+esc(r.role)+'</span>' : '')
     + (st.lead ? '<span class="lead" style="margin:0">удирдагч</span>' : '')+'</div>'
-    + '<div class="sub" style="margin-top:4px">'+fmt(r.rate)+'/өдөр · '+st.njobs+' ажил · '+nd(st.days)+' өдөр'
+    + '<div class="sub" style="margin-top:4px">'+(isAdmin() ? fmt(r.rate)+'/өдөр · ' : '')+st.njobs+' ажил · '+nd(st.days)+' өдөр'
     + (st.bonus > 0 ? ' · урамшуулал '+fmt(st.bonus) : '')
     + (st.mEarn > 0 ? ' · борлуулалт '+fmt(st.mEarn) : '')+'</div></div>'
     + (isAdmin() ? '<button class="x" style="margin:-8px -10px 0 0" aria-label="Бусад үйлдэл" '
