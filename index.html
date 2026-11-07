@@ -422,6 +422,10 @@ const curMatPct = () => (typeof matPct === 'number') ? matPct : MATPCT_DEF;
 let citPct = null;
 const CIT_DEF = 1;
 const curCit = () => (typeof citPct === 'number') ? citPct : CIT_DEF;
+// баримтгүй олгосон цалингийн татвар (ХХОАТ)
+let wtaxPct = null;
+const WTAX_DEF = 10;
+const curWtax = () => (typeof wtaxPct === 'number') ? wtaxPct : WTAX_DEF;
 const pctOf = v => { let x = parseFloat(String(v).replace(',','.')); if(!(x >= 0)) x = 0; return Math.min(100, Math.round(x*100)/100); };
 const canMat = () => isAdmin() || (!!me && matUsers.indexOf(me) >= 0);
 let shadow = {}, rshadow = {}, sshadow = {};
@@ -486,7 +490,8 @@ function saveMatUsers(){
   try {
     FB.setDoc(FB.doc(FB.db, 'config', 'admin'), clean(Object.assign({email: admin || me, mat: matUsers},
       (typeof matPct === 'number') ? {matPct: matPct, matPctSet: true} : {},
-      (typeof citPct === 'number') ? {citPct: citPct, citSet: true} : {})))
+      (typeof citPct === 'number') ? {citPct: citPct, citSet: true} : {},
+      (typeof wtaxPct === 'number') ? {wtaxPct: wtaxPct, wtaxSet: true} : {})))
       .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
   } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
 }
@@ -604,8 +609,9 @@ function subscribe(){
       const nw = v.map(x => String(x).toLowerCase());
       const mp = (ok && d.data().matPctSet && typeof d.data().matPct === 'number') ? d.data().matPct : null;
       const cp = (ok && d.data().citSet && typeof d.data().citPct === 'number') ? d.data().citPct : null;
-      if(JSON.stringify(nw) !== JSON.stringify(matUsers) || mp !== matPct || cp !== citPct){
-        matUsers = nw; matPct = mp; citPct = cp; cloudRender(); }
+      const wp = (ok && d.data().wtaxSet && typeof d.data().wtaxPct === 'number') ? d.data().wtaxPct : null;
+      if(JSON.stringify(nw) !== JSON.stringify(matUsers) || mp !== matPct || cp !== citPct || wp !== wtaxPct){
+        matUsers = nw; matPct = mp; citPct = cp; wtaxPct = wp; cloudRender(); }
     },
     ()=>{}
   );
@@ -1566,7 +1572,7 @@ function taxView(){
   h += '<div class="card"><div style="font-weight:700;font-size:15px">Татвар төрлөөр</div>'
     + '<div class="calc" style="margin:8px 0 0">'
     + ln('Баримтгүй зардлын татвар', 'баримтгүй зардал '+fmt(t.noRc), t.notax)
-    + ((t.wtax || t.noRcW) ? ln('Баримтгүй цалингийн татвар '+WTAX_PCT+'%', 'баримтгүй олгосон '+fmt(t.noRcW), t.wtax) : '')
+    + ((t.wtax || t.noRcW) ? ln('Баримтгүй цалингийн татвар '+curWtax()+'%', 'баримтгүй олгосон '+fmt(t.noRcW), t.wtax) : '')
     + (t.vat ? ln('НӨАТ '+VAT_PCT+'%', 'НӨАТ-тэй ажлуудын гэрээнээс', t.vat) : '')
     + (t.other ? ln('Ажил дээр бүртгэсэн татвар, хураамж', '"Татвар" ангиллаар гараар', t.other) : '')
     + ln('ААНОАТ '+p+'%', 'ногдох ашиг '+fmt(t.r.taxable)
@@ -1580,7 +1586,7 @@ function taxView(){
         : '')
     + '</div>';
 
-  const off = citOff();
+  const off = citOff(), wOff = wtaxOff();
   h += '<div class="card"><div style="font-weight:700;font-size:15px">Тохиргоо</div>'
     + '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
     + '<label for="citIn" style="flex:1;min-width:0;font-size:14px">ААНОАТ (бодит хувь)</label>'
@@ -1592,6 +1598,16 @@ function taxView(){
         ? '<div class="warn" style="margin:10px 0 0">'+off.length+' идэвхтэй ажлын баримтгүй зардлын татвар өөр хувьтай ('
           + off.map(j => jobTaxPct(j)).filter((v,i,a) => a.indexOf(v) === i).join(', ')+'%).'
           + '<div style="margin-top:8px"><button class="small" onclick="applyCit()">Бүгдэд '+p+'% хэрэглэх</button></div></div>'
+        : '')
+    + '<div style="display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
+    + '<label for="wtIn" style="flex:1;min-width:0;font-size:14px">Баримтгүй цалингийн татвар</label>'
+    + '<input id="wtIn" inputmode="decimal" value="'+curWtax()+'" style="width:70px;text-align:right"><b>%</b>'
+    + '<button class="small" onclick="saveWtax()">Хадгалах</button></div>'
+    + '<div class="rdate" style="margin-top:6px">Цалин, урамшууллыг "Баримттай" чекгүй олгоход ажил дээр энэ хувиар '
+    + 'татвар зардал болно (ХХОАТ 10%). 0 бол татвар бодохгүй.</div>'
+    + (wOff.length
+        ? '<div class="warn" style="margin:10px 0 0">'+wOff.length+' идэвхтэй ажилд баримтгүй цалингийн татвар өөр хувиар бодогдсон.'
+          + '<div style="margin-top:8px"><button class="small" onclick="applyWtax()">Бүгдэд '+curWtax()+'% хэрэглэх</button></div></div>'
         : '')
     + '</div>';
 
@@ -2653,7 +2669,7 @@ function detailView(j){
               ? '<label class="check" style="margin:10px 0 0;min-height:40px"><input type="checkbox" onchange="toggleReceipt(\''+it.id+'\')"'
                 + (it.receipt === false ? '' : ' checked')+'>'
                 + '<span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
-                + (c.k === 'wage' ? WTAX_PCT : jobTaxPct(j))+'% татвар</span></span></label>'
+                + (c.k === 'wage' ? curWtax() : jobTaxPct(j))+'% татвар</span></span></label>'
               : '')
           + '</div>';
       }
@@ -3394,18 +3410,18 @@ function rPayBox(r){
     }
     h += '</div>';
   }
-  const wTax = ui.rpRcpt ? 0 : Math.round((tW + tB) * WTAX_PCT / 100);
+  const wTax = ui.rpRcpt ? 0 : Math.round((tW + tB) * curWtax() / 100);
   h += '<input id="rpDate" type="date" value="'+today()+'" style="margin-top:10px">'
     + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.rpRcpt?' checked':'')
     + ' onchange="ui.rpRcpt=this.checked;render()"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
-    + WTAX_PCT+'% татвар ажил дээр зардал болно</span></span></label>'
+    + curWtax()+'% татвар ажил дээр зардал болно</span></span></label>'
     + '<div class="calc" style="margin:8px 0">'
     + (tW > 0 ? '<div class="ln"><span>Цалин</span><b>'+fmt(tW)+'</b></div>' : '')
     + (tB > 0 ? '<div class="ln"><span>Ашгийн урамшуулал</span><b>'+fmt(tB)+'</b></div>' : '')
     + (ma.amt > 0 ? '<div class="ln"><span>Борлуулалтын урамшуулал</span><b>'+fmt(ma.amt)+'</b></div>' : '')
     + '<div class="ln tot"><span>Нийт олгох</span>'
     + '<b class="pos">'+fmt(tW + tB + ma.amt)+'</b></div>'
-    + (wTax > 0 ? '<div class="ln" style="margin-top:6px"><span>Татвар '+WTAX_PCT+'% (ажил дээр зардал)</span><b class="neg">+'+fmt(wTax)+'</b></div>' : '')
+    + (wTax > 0 ? '<div class="ln" style="margin-top:6px"><span>Татвар '+curWtax()+'% (ажил дээр зардал)</span><b class="neg">+'+fmt(wTax)+'</b></div>' : '')
     + '</div>'
     + '<div class="btns"><button class="btn"'+((tW+tB+ma.amt)>0?'':' disabled')
     + ' onclick="payRosterWage(\''+r.id+'\')">Олгох</button>'
@@ -3439,7 +3455,7 @@ function rBonBox(r){
     + '<input id="rbDate" type="date" value="'+today()+'">'
     + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.rbRcpt?' checked':'')
     + ' onchange="ui.rbRcpt=this.checked"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
-    + WTAX_PCT+'% татвар ажил дээр зардал болно</span></span></label>'
+    + curWtax()+'% татвар ажил дээр зардал болно</span></span></label>'
     + '<div class="btns"><button class="btn"'+(amt>0 && totDays>0?'':' disabled')
     + ' onclick="payRosterBonus(\''+r.id+'\')">Олгох</button>'
     + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
@@ -3906,14 +3922,14 @@ function shortBy(em){
 }
 
 // ---------- татвар ----------
-const VAT_PCT = 10, WTAX_PCT = 10;
+const VAT_PCT = 10;
 const jobTaxPct = j => (typeof j.taxPct === 'number') ? j.taxPct : curCit();
 // баримтгүй зардалд холбогдох татварын мөрийг дахин тооцно
 function taxRowFor(j, e){
   j.expenses = j.expenses.filter(x => x.ofId !== e.id);
   if(e.receipt !== false || e.auto || e.cat === 'tax') return;
   const wage = e.cat === 'wage';
-  const pct = wage ? WTAX_PCT : jobTaxPct(j);
+  const pct = wage ? curWtax() : jobTaxPct(j);
   if(!(pct > 0)) return;
   j.expenses.push({id: uid(), desc: 'Татвар '+pct+'% \u2014 '+e.desc+' (баримтгүй)',
     amount: Math.round((e.amount||0) * pct / 100), date: e.date, cat: 'tax', asset: false,
@@ -3958,6 +3974,28 @@ function applyCit(){
   citOff().forEach(j => {
     j.taxPct = p;
     j.expenses.filter(e => e.receipt === false && e.cat !== 'wage' && !e.auto).forEach(e => taxRowFor(j, e));
+  });
+  save(); ui = {}; render();
+}
+function saveWtax(){
+  if(!isAdmin()) return;
+  const v = parseFloat(String((document.getElementById('wtIn')||{}).value||'').replace(',','.'));
+  if(!(v >= 0) || v > 100){ alert('Хувийг 0–100 хооронд оруулна уу.'); return; }
+  wtaxPct = Math.round(v*100)/100;
+  saveMatUsers(); ui = {}; render();
+}
+// баримтгүй цалингийн татвар одоогийн хувиас зөрсөн идэвхтэй ажлууд
+const wtaxOk = (j, e) => {
+  const r = j.expenses.find(x => x.ofId === e.id);
+  const want = curWtax() > 0 ? Math.round((e.amount||0) * curWtax() / 100) : 0;
+  return r ? r.amount === want : want === 0;
+};
+const wtaxOff = () => jobs.filter(j => !j.done &&
+  j.expenses.some(e => e.receipt === false && e.cat === 'wage' && !e.auto && !wtaxOk(j, e)));
+function applyWtax(){
+  if(!isAdmin()) return;
+  wtaxOff().forEach(j => {
+    j.expenses.filter(e => e.receipt === false && e.cat === 'wage' && !e.auto).forEach(e => taxRowFor(j, e));
   });
   save(); ui = {}; render();
 }
@@ -4456,7 +4494,7 @@ function boot(){
     me = u ? (u.email||'').toLowerCase() : null;
     jobs = []; roster = []; stock = []; shadow = {}; rshadow = {}; sshadow = {}; admin = null;
     overhead = []; oshadow = {}; cpYear = null; sups = []; supShadow = {};
-    matUsers = []; matPct = null; citPct = null;
+    matUsers = []; matPct = null; citPct = null; wtaxPct = null;
     booted = !me; ui = {}; openId = null; view = 'list';
     if(!me){ render(); return; }
     try{ localStorage.setItem('last-email', me); }catch(e){}
@@ -4468,6 +4506,7 @@ function boot(){
         matUsers = (d.data().mat||[]).map(x => String(x).toLowerCase());
         matPct = (d.data().matPctSet && typeof d.data().matPct === 'number') ? d.data().matPct : null;
         citPct = (d.data().citSet && typeof d.data().citPct === 'number') ? d.data().citPct : null;
+        wtaxPct = (d.data().wtaxSet && typeof d.data().wtaxPct === 'number') ? d.data().wtaxPct : null;
         subscribe();
       } else {
         F.setDoc(ref, {email: me})
