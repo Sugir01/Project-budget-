@@ -78,6 +78,8 @@ input:focus{border-color:var(--ink)}
 .ramt{font-weight:600;white-space:nowrap}
 .tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#F4EEDC;
   color:var(--asset);font-size:11px;font-weight:600;vertical-align:1px}
+.rtag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;border:0;background:#FBF0D9;
+  color:#7A4F00;font:inherit;font-size:11px;font-weight:600;vertical-align:1px;cursor:pointer}
 .x{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px 6px;
   min-width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .empty{background:var(--surface);border-radius:12px;padding:28px 20px;text-align:center;color:var(--muted);margin-bottom:14px}
@@ -363,7 +365,7 @@ function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setIt
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
-let cpOpenM = false, cpOpenD = false;
+let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false;
 let sups = [], supShadow = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
@@ -416,6 +418,10 @@ let matUsers = [];
 let matPct = null, lastSeller = '';
 const MATPCT_DEF = 20;
 const curMatPct = () => (typeof matPct === 'number') ? matPct : MATPCT_DEF;
+// ААНОАТ-ын бодит хувь (10% − 90% буцаан олголт = 1%)
+let citPct = null;
+const CIT_DEF = 1;
+const curCit = () => (typeof citPct === 'number') ? citPct : CIT_DEF;
 const pctOf = v => { let x = parseFloat(String(v).replace(',','.')); if(!(x >= 0)) x = 0; return Math.min(100, Math.round(x*100)/100); };
 const canMat = () => isAdmin() || (!!me && matUsers.indexOf(me) >= 0);
 let shadow = {}, rshadow = {}, sshadow = {};
@@ -479,7 +485,8 @@ function saveMatUsers(){
   if(!me || !window.FB || !isAdmin()) return;
   try {
     FB.setDoc(FB.doc(FB.db, 'config', 'admin'), clean(Object.assign({email: admin || me, mat: matUsers},
-      (typeof matPct === 'number') ? {matPct: matPct, matPctSet: true} : {})))
+      (typeof matPct === 'number') ? {matPct: matPct, matPctSet: true} : {},
+      (typeof citPct === 'number') ? {citPct: citPct, citSet: true} : {})))
       .catch(e => { syncErr = e.code||'алдаа'; setTimeout(render, 0); });
   } catch(e) { syncErr = e.code || e.message || 'алдаа'; setTimeout(render, 0); }
 }
@@ -596,7 +603,9 @@ function subscribe(){
       const v = ok ? (d.data().mat||[]) : [];
       const nw = v.map(x => String(x).toLowerCase());
       const mp = (ok && d.data().matPctSet && typeof d.data().matPct === 'number') ? d.data().matPct : null;
-      if(JSON.stringify(nw) !== JSON.stringify(matUsers) || mp !== matPct){ matUsers = nw; matPct = mp; cloudRender(); }
+      const cp = (ok && d.data().citSet && typeof d.data().citPct === 'number') ? d.data().citPct : null;
+      if(JSON.stringify(nw) !== JSON.stringify(matUsers) || mp !== matPct || cp !== citPct){
+        matUsers = nw; matPct = mp; citPct = cp; cloudRender(); }
     },
     ()=>{}
   );
@@ -861,7 +870,7 @@ const stChip = st => '<span class="st '+st.k+'"><i></i>'+st.t+'</span>';
 
 function navCur(){
   if(openId && jobs.some(j=>j.id===openId)) return view === 'list' ? 'list' : 'more';
-  if(['assets','types','done','more','oh','coprof'].indexOf(view) >= 0) return 'more';
+  if(['assets','types','done','more','oh','coprof','tax'].indexOf(view) >= 0) return 'more';
   if(view === 'roster') return 'roster';
   if((view === 'stock' || view === 'sup') && canMat()) return 'stock';
   return 'list';
@@ -965,8 +974,9 @@ function moreView(){
     const ohM = ohEntries().filter(e => e.date.slice(0,7) === td.slice(0,7)).reduce((t,e)=>t+e.amount, 0);
     const cy = coYear(td.slice(0,4));
     h += row('Байгууллагын зардал', 'энэ сар '+fmt(ohM), "view='oh';ui={};render()");
-    h += row('Компанийн ашиг', td.slice(0,4)+' · '+fmt(cy.net), "view='coprof';cpYear=null;ui={};render()",
-             cy.net < 0 ? 'var(--bad)' : 'var(--good)');
+    h += row('Компанийн ашиг', td.slice(0,4)+' · '+fmt(cy.after), "view='coprof';cpYear=null;ui={};render()",
+             cy.after < 0 ? 'var(--bad)' : 'var(--good)');
+    h += row('Татвар', td.slice(0,4)+' · '+fmt(taxYear(td.slice(0,4)).total), "view='tax';txYear=null;ui={};render()");
   }
   h += row('Дууссан ажил', done.length+' ажил', "view='done';ui={};render()");
   h += '</div>';
@@ -1039,7 +1049,10 @@ function factsCard(j){
       + (jobDates(j) || 'оруулах')+'<span class="e">засах</span></div>'
       + (stopDays(j) > 0 ? '<div class="rdate">Гэрээ '+j.endDate+' · +'+stopDays(j)+' хоног</div>' : '')+'</div>';
   }
-  h += fact('Орсон орлого', fmt(e)) + fact('Нийт зардал', fmt(s)) + fact('Үндсэн хөрөнгө', fmt(av))
+  const tx = j.expenses.filter(x => x.cat === 'tax').reduce((t,x)=>t+(x.amount||0), 0);
+  h += fact('Орсон орлого', fmt(e))
+    + fact('Нийт зардал', fmt(s) + (tx > 0 ? '<div class="rdate" style="font-weight:400">үүнээс татвар '+fmt(tx)+'</div>' : ''))
+    + fact('Үндсэн хөрөнгө', fmt(av))
     + fact('Хүн өдөр', nd(manDays(j))+' <span style="font-size:12.5px;font-weight:400;color:var(--muted)">· '
       + workDays(j)+' өдөр</span>');
   return h + '</div></div>';
@@ -1106,12 +1119,13 @@ function ohEntries(){
         if((o.skip||[]).indexOf(m) < 0){
           const dd = recDate(o, m);
           if(dd <= td) out.push({id: o.id+'@'+m, rid: o.id, desc: o.desc, cat: o.cat, amount: o.amount||0,
-                                 date: dd, rec: true, by: o.by});
+                                 date: dd, rec: true, by: o.by, receipt: o.receipt});
         }
         m = addMonth(m, 1);
       }
     } else if(o.date){
-      out.push({id: o.id, desc: o.desc, cat: o.cat, amount: o.amount||0, date: o.date, rec: false, by: o.by});
+      out.push({id: o.id, desc: o.desc, cat: o.cat, amount: o.amount||0, date: o.date, rec: false, by: o.by,
+                receipt: o.receipt});
     }
   });
   return out.sort((a,b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
@@ -1127,18 +1141,28 @@ function addOH(){
   const desc = g('ohDesc').trim(), amt = num(g('ohAmt')), dt = g('ohDate') || today();
   const recEl = document.getElementById('ohRec');
   const rec = !!(recEl && recEl.checked);
+  const rcEl = document.getElementById('ohRcpt');
+  const rc = !rcEl || !!rcEl.checked;
   if(!desc){ alert('Тайлбараа оруулна уу.'); return; }
   if(!(amt > 0)){ alert('Дүнгээ оруулна уу.'); return; }
   if(rec){
     overhead.push({id: uid(), kind: 'rec', desc: desc, cat: oCat, amount: amt,
                    day: parseInt(dt.slice(8,10),10) || 1, from: dt.slice(0,7), until: '', skip: [],
-                   by: me||'', owner: admin||me});
+                   receipt: rc, by: me||'', owner: admin||me});
   } else {
     overhead.push({id: uid(), kind: 'one', desc: desc, cat: oCat, amount: amt, date: dt,
-                   by: me||'', owner: admin||me});
+                   receipt: rc, by: me||'', owner: admin||me});
   }
   saveOH(); ui = {}; render();
 }
+// баримттай/баримтгүй солих (сар бүрийнх бол загварт нь)
+function toggleOHRcpt(id){
+  const at = id.indexOf('@');
+  const o = overhead.find(x => x.id === (at > 0 ? id.slice(0, at) : id)); if(!o) return;
+  o.receipt = (o.receipt === false);
+  saveOH(); render();
+}
+const ohTag = id => '<button class="rtag" title="Баримт авсан бол дарна" onclick="toggleOHRcpt(\''+id+'\')">баримтгүй</button>';
 function delOH(id){
   const at = id.indexOf('@');
   if(at > 0){
@@ -1194,6 +1218,9 @@ function ohView(){
           + '<i class="cd" style="background:'+c.c+'"></i>'+c.t+'</button>').join('') + '</div>'
       + '<label class="check" style="min-height:40px"><input type="checkbox" id="ohRec">Сар бүр давтах</label>'
       + '<div class="rdate" style="margin:-6px 0 10px 28px">Огнооны өдрөөр сар бүр автоматаар нэмэгдэнэ.</div>'
+      + '<label class="check" style="min-height:40px"><input type="checkbox" id="ohRcpt" checked>Баримттай</label>'
+      + '<div class="rdate" style="margin:-6px 0 10px 28px">Баримтгүй бол ААНОАТ-ын тооцоонд нэмэгдэж '
+      + curCit()+'% татвар бодогдоно.</div>'
       + '<div style="display:flex;gap:8px"><button class="btn" onclick="addOH()">Нэмэх</button>'
       + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
   }
@@ -1207,11 +1234,13 @@ function ohView(){
         + '<span class="dot" style="background:'+c.c+'"></span>'
         + '<div class="bd"><div class="ds">'+esc(o.desc)+'</div>'
         + '<div class="mt">'+c.t+' · сар бүрийн '+(o.day||1)+'-нд · эхэлсэн '+o.from
-        + (o.until ? ' · зогссон '+o.until : '')+'</div>'
-        + '<div style="display:flex;gap:6px;margin-top:8px">'
+        + (o.until ? ' · зогссон '+o.until : '')+(o.receipt === false ? ohTag(o.id) : '')+'</div>'
+        + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'
         + (on ? '<button class="small" onclick="stopRec(\''+o.id+'\')">Зогсоох</button>'
               : '<button class="small" onclick="resumeRec(\''+o.id+'\')">Сэргээх</button>'
                 + '<button class="small warn" onclick="ui={ohRecDel:\''+o.id+'\'};render()">Устгах</button>')
+        + '<button class="small" onclick="toggleOHRcpt(\''+o.id+'\')">'
+        + (o.receipt === false ? 'Баримттай болгох' : 'Баримтгүй болгох')+'</button>'
         + '</div></div>'
         + '<span class="am" style="padding-right:12px;align-self:flex-start;margin-top:2px">'+fmt(o.amount)+'</span></div>';
       if(ui.ohRecDel === o.id){
@@ -1241,7 +1270,8 @@ function ohView(){
       const c = ocatOf(e.cat);
       h += '<div class="erow"><span class="dot" style="background:'+c.c+'"></span>'
         + '<div class="bd"><div class="ds">'+esc(e.desc)+'</div>'
-        + '<div class="mt">'+c.t+' · '+shortDate(e.date)+(e.rec ? ' · сар бүр' : '')+'</div></div>'
+        + '<div class="mt">'+c.t+' · '+shortDate(e.date)+(e.rec ? ' · сар бүр' : '')
+        + (e.receipt === false ? (e.rec ? '<span class="rtag" style="cursor:default">баримтгүй</span>' : ohTag(e.id)) : '')+'</div></div>'
         + '<span class="am">−'+fmt(e.amount)+'</span>'
         + '<button class="x" aria-label="Устгах" onclick="delOH(\''+e.id+'\')">×</button></div>';
     });
@@ -1276,7 +1306,13 @@ function coYear(y){
   const ohT = E.reduce((t,e)=>t+e.amount, 0);
   E.forEach(e => add(e.date, 'oh', e.amount));
   const contracts = doneY.reduce((t,j)=>t+j.contract, 0);
-  return {y: y, doneY: doneY, jobP: jobP, matP: matP, ohT: ohT, net: jobP + matP - ohT,
+  const net = jobP + matP - ohT;
+  // ААНОАТ: цэвэр ашиг + баримтгүй байгууллагын зардал (хасагдахгүй) × бодит хувь
+  const ohNo = E.filter(e => e.receipt === false).reduce((t,e)=>t+e.amount, 0);
+  const taxable = Math.max(0, net + ohNo);
+  const cit = Math.round(taxable * curCit() / 100);
+  return {y: y, doneY: doneY, jobP: jobP, matP: matP, ohT: ohT, net: net, ohNo: ohNo, taxable: taxable,
+          cit: cit, after: net - cit,
           contracts: contracts, rate: (contracts > 0 ? ohT / contracts * 100 : null), mo: mo};
 }
 // компанийн хувь тогтооход харуулах байгууллагын зардлын хувь
@@ -1343,7 +1379,7 @@ function cumChart(r, y, cur){
     + '<span style="font-weight:700;font-size:15px">Оны эхнээс хуримтлагдсан ашиг</span></div>'
     + '<div style="display:flex;align-items:baseline;gap:8px;margin-top:4px">'
     + '<span style="font-size:24px;font-weight:700" class="'+(tot<0?'neg':'pos')+'">'+fmt(tot)+'</span>'
-    + '<span class="rdate">'+(last+1)+'-р сар хүртэл</span></div>'
+    + '<span class="rdate">'+(last+1)+'-р сар хүртэл · татварын өмнө</span></div>'
     + s
     + '<div style="display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px">'
     + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2F6B4F;margin-right:5px"></i>ашигтай сар</span>'
@@ -1368,12 +1404,14 @@ function coProfView(){
     + '</div></div>';
 
   h += '<div class="hero" style="margin-bottom:12px">'
-    + '<div style="font-size:13px;opacity:.75">Цэвэр ашиг · '+y+' он</div>'
-    + '<div class="hbig '+(r.net<0?'neg':'pos')+'">'+fmt(r.net)+'</div>'
+    + '<div style="font-size:13px;opacity:.75">Цэвэр ашиг · '+y+' он · татварын дараа</div>'
+    + '<div class="hbig '+(r.after<0?'neg':'pos')+'">'+fmt(r.after)+'</div>'
     + '<div class="pairs">'
     + '<div class="pair"><div class="plabel">Ажил + материалаас</div><div class="pval pos">'+fmt(r.jobP + r.matP)+'</div></div>'
     + '<div class="pair"><div class="plabel">Байгууллагын зардал</div>'
-    + '<div class="pval" style="color:#F4A99C">'+fmt(r.ohT)+'</div></div></div></div>';
+    + '<div class="pval" style="color:#F4A99C">'+fmt(r.ohT)+'</div></div></div>'
+    + '<div style="font-size:12.5px;opacity:.75;margin-top:10px">Татварын өмнө '+fmt(r.net)
+    + ' · ААНОАТ '+curCit()+'% −'+fmt(r.cit)+'</div></div>';
 
   h += cumChart(r, y, cur);
 
@@ -1381,7 +1419,12 @@ function coProfView(){
     + '<div class="ln"><span>Дууссан '+r.doneY.length+' ажлаас компанид</span><b>'+fmt(r.jobP)+'</b></div>'
     + '<div class="ln"><span>Материалын ашиг</span><b>'+fmt(r.matP)+'</b></div>'
     + '<div class="ln"><span>Байгууллагын зардал</span><b>−'+fmt(r.ohT)+'</b></div>'
-    + '<div class="ln tot"><span>Цэвэр ашиг</span><b class="'+(r.net<0?'neg':'pos')+'">'+fmt(r.net)+'</b></div></div>'
+    + '<div class="ln tot"><span>Татварын өмнөх ашиг</span><b class="'+(r.net<0?'neg':'pos')+'">'+fmt(r.net)+'</b></div>'
+    + '<div class="ln"><span>ААНОАТ '+curCit()+'%'
+    + (r.ohNo > 0 ? '<span class="rdate" style="display:block">баримтгүй байгууллагын зардал '+fmt(r.ohNo)+' нэмж</span>' : '')
+    + '</span><b>−'+fmt(r.cit)+'</b></div>'
+    + '<div class="ln tot"><span>Татварын дараах ашиг</span><b class="'+(r.after<0?'neg':'pos')+'">'+fmt(r.after)+'</b></div></div>'
+    + '<button class="link" style="margin-top:8px" onclick="view=\'tax\';txYear='+y+';ui={};render()">Татварын дэлгэрэнгүй →</button>'
     + (r.rate !== null
         ? '<div class="rdate" style="margin-top:10px">Байгууллагын зардал дууссан ажлуудын гэрээний ('+fmt(r.contracts)
           + ') <b style="color:var(--ink)">'+(Math.round(r.rate*10)/10)+'%</b> эзэлж байна. Ажил дээрх компанийн хувийг '
@@ -1447,6 +1490,135 @@ function coProfView(){
     h += '</div>';
   } else {
     h += '<div class="note">'+y+' онд дууссан ажил алга.</div>';
+  }
+  return h;
+}
+
+// ---------- татвар ----------
+// оны татварын зардал: ажлын татварын мөрүүд (огноогоор), ААНОАТ (компанийн ашгаас), баримтгүй жагсаалт
+function taxYear(y){
+  y = String(y);
+  const inY = d => String(d||'').slice(0,4) === y;
+  const t = {notax: 0, wtax: 0, vat: 0, other: 0, noRc: 0, noRcW: 0, list: []};
+  jobs.forEach(j => (j.expenses||[]).forEach(e => {
+    if(!inY(e.date)) return;
+    const a = e.amount || 0;
+    if(e.cat === 'tax'){
+      if(e.auto === 'notax') t.notax += a;
+      else if(e.auto === 'wtax') t.wtax += a;
+      else if(e.auto === 'vat') t.vat += a;
+      else t.other += a;
+      return;
+    }
+    if(e.receipt === false && !e.auto){
+      const tr = j.expenses.find(x => x.ofId === e.id);
+      if(e.cat === 'wage') t.noRcW += a; else t.noRc += a;
+      t.list.push({j: j, e: e, tax: tr ? (tr.amount||0) : 0});
+    }
+  }));
+  const r = coYear(y);
+  const OE = isAdmin() ? ohEntries().filter(e => inY(e.date)) : [];
+  // сар бүрийн зардлыг загвараар нь нэг мөр болгоно
+  const grp = {};
+  OE.filter(e => e.receipt === false).forEach(e => {
+    if(e.rec){
+      const g = grp[e.rid];
+      if(g){ g.e.amount += e.amount||0; g.n++; if(e.date > g.e.date) g.e.date = e.date; }
+      else { grp[e.rid] = {oh: true, n: 1, e: {desc: e.desc, cat: e.cat, amount: e.amount||0, date: e.date}}; t.list.push(grp[e.rid]); }
+    } else t.list.push({oh: true, n: 0, e: e});
+  });
+  t.list.forEach(x => { if(x.oh) x.tax = Math.round((x.e.amount||0) * curCit() / 100); });
+  t.ohTaxCat = OE.filter(e => e.cat === 'tax').reduce((s,e)=>s+(e.amount||0), 0);
+  t.r = r; t.ohNo = r.ohNo; t.cit = r.cit;
+  t.total = t.notax + t.wtax + t.vat + t.other + t.cit;
+  t.save = t.notax + t.wtax + Math.round(r.ohNo * curCit() / 100);
+  t.list.sort((a,b) => a.e.date < b.e.date ? 1 : (a.e.date > b.e.date ? -1 : 0));
+  return t;
+}
+
+function taxView(){
+  const cur = parseInt(today().slice(0,4),10);
+  const y = txYear || cur;
+  const t = taxYear(y), p = curCit();
+  const noAll = t.noRc + t.noRcW + t.ohNo;
+
+  let h = '<button class="link" onclick="view=\'more\';ui={};render()">← Бусад</button>'
+    + '<div class="sechd" style="margin-top:0"><h2 style="font-size:22px">Татвар</h2>'
+    + '<div style="display:flex;align-items:center;gap:6px">'
+    + '<button class="small" aria-label="Өмнөх он" onclick="txYear='+(y-1)+';render()">‹</button>'
+    + '<b style="font-size:15px;min-width:52px;text-align:center">'+y+'</b>'
+    + (y < cur ? '<button class="small" aria-label="Дараах он" onclick="txYear='+(y+1)+';render()">›</button>'
+               : '<span style="width:38px"></span>')
+    + '</div></div>';
+
+  h += '<div class="hero" style="margin-bottom:12px">'
+    + '<div style="font-size:13px;opacity:.75">Нийт татварын зардал · '+y+' он</div>'
+    + '<div class="hbig">'+fmt(t.total)+'</div>'
+    + '<div class="pairs">'
+    + '<div class="pair"><div class="plabel">Баримтгүй зардал</div>'
+    + '<div class="pval" style="color:#F4C77A">'+fmt(noAll)+'</div></div>'
+    + '<div class="pair"><div class="plabel">Баримттай байсан бол хэмнэх</div>'
+    + '<div class="pval pos">'+fmt(t.save)+'</div></div></div></div>';
+
+  const ln = (label, sub, v) => '<div class="ln"><span>'+label
+    + (sub ? '<span class="rdate" style="display:block;margin-top:1px">'+sub+'</span>' : '')
+    + '</span><b style="white-space:nowrap">'+fmt(v)+'</b></div>';
+  h += '<div class="card"><div style="font-weight:700;font-size:15px">Татвар төрлөөр</div>'
+    + '<div class="calc" style="margin:8px 0 0">'
+    + ln('Баримтгүй зардлын татвар', 'баримтгүй зардал '+fmt(t.noRc), t.notax)
+    + ((t.wtax || t.noRcW) ? ln('Баримтгүй цалингийн татвар '+WTAX_PCT+'%', 'баримтгүй олгосон '+fmt(t.noRcW), t.wtax) : '')
+    + (t.vat ? ln('НӨАТ '+VAT_PCT+'%', 'НӨАТ-тэй ажлуудын гэрээнээс', t.vat) : '')
+    + (t.other ? ln('Ажил дээр бүртгэсэн татвар, хураамж', '"Татвар" ангиллаар гараар', t.other) : '')
+    + ln('ААНОАТ '+p+'%', 'ногдох ашиг '+fmt(t.r.taxable)
+        + (t.ohNo > 0 ? ' (баримтгүй байгууллагын зардал '+fmt(t.ohNo)+' орсон)' : ''), t.cit)
+    + '<div class="ln tot"><span>Нийт</span><b>'+fmt(t.total)+'</b></div></div>'
+    + '<div class="rdate" style="margin-top:10px">Ажлын татварууд зардлын огноогоор, бүх ажлаас. '
+    + 'ААНОАТ — '+y+' онд дууссан ажил, материалын ашиг, байгууллагын зардлаас (Компанийн ашиг).</div>'
+    + (t.ohTaxCat > 0
+        ? '<div class="rdate" style="margin-top:6px">Байгууллагын зардалд "Татвар/хураамж" ангиллаар '+fmt(t.ohTaxCat)
+          + ' бүртгэгдсэн (дээрх нийтэд ороогүй). ААНОАТ энд автоматаар тооцогддог тул түүнийг тэнд давхар оруулахгүй.</div>'
+        : '')
+    + '</div>';
+
+  const off = citOff();
+  h += '<div class="card"><div style="font-weight:700;font-size:15px">Тохиргоо</div>'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
+    + '<label for="citIn" style="flex:1;min-width:0;font-size:14px">ААНОАТ (бодит хувь)</label>'
+    + '<input id="citIn" inputmode="decimal" value="'+p+'" style="width:70px;text-align:right"><b>%</b>'
+    + '<button class="small" onclick="saveCit()">Хадгалах</button></div>'
+    + '<div class="rdate" style="margin-top:6px">10% ногдуулаад 90%-ийг буцаан авдаг бол 1%. Шинэ ажлын баримтгүй '
+    + 'зардлын татвар болон ААНОАТ-ын тооцоонд хэрэглэнэ.</div>'
+    + (off.length
+        ? '<div class="warn" style="margin:10px 0 0">'+off.length+' идэвхтэй ажлын баримтгүй зардлын татвар өөр хувьтай ('
+          + off.map(j => jobTaxPct(j)).filter((v,i,a) => a.indexOf(v) === i).join(', ')+'%).'
+          + '<div style="margin-top:8px"><button class="small" onclick="applyCit()">Бүгдэд '+p+'% хэрэглэх</button></div></div>'
+        : '')
+    + '</div>';
+
+  if(t.list.length){
+    h += '<div class="sect" style="margin-top:14px">'
+      + '<button class="hd" onclick="txOpenL=!txOpenL;render()" aria-expanded="'+txOpenL+'">'
+      + '<span>Баримтгүй зардлууд <span class="cnt">· '+t.list.length+' · '+fmt(noAll)+'</span></span>'
+      + '<span class="arw'+(txOpenL?' op':'')+'">›</span></button>';
+    if(txOpenL){
+      h += '<div style="border-top:1px solid #EEF1ED">';
+      t.list.forEach(x => {
+        const e = x.e;
+        const fn = x.oh ? "view='oh';ui={};render()" : "openJob('"+x.j.id+"');setTab('exp')";
+        h += '<div class="erow" style="padding-right:14px"><div class="bd tap" onclick="'+fn+'">'
+          + '<div class="ds">'+esc(e.desc)+'</div>'
+          + '<div class="mt">'+(x.oh ? 'Байгууллагын зардал' : esc(x.j.name))
+          + (x.n ? ' · сар бүр · '+x.n+' удаа, сүүлд '+shortDate(e.date) : ' · '+shortDate(e.date))
+          + (e.cat === 'wage' ? ' · цалин' : '')+'</div></div>'
+          + '<span class="am" style="text-align:right">'+fmt(e.amount)
+          + '<span class="rdate" style="display:block;font-weight:400">татвар '+fmt(x.tax)+'</span></span></div>';
+      });
+      h += '<div class="rdate" style="padding:10px 14px 12px">Баримтаа авсан бол мөрийг дарж ажил руу орно → '
+        + 'Зардал таб дээр тухайн зардлыг дараад "Баримттай" болгоно. Татварын мөр автоматаар арилна.</div></div>';
+    }
+    h += '</div>';
+  } else {
+    h += '<div class="note">'+y+' онд баримтгүй зардал алга.</div>';
   }
   return h;
 }
@@ -1737,6 +1909,7 @@ function render(){
   else if(view === 'sup' && canMat()) html = supView();
   else if(view === 'oh' && isAdmin()) html = ohView();
   else if(view === 'coprof' && isAdmin()) html = coProfView();
+  else if(view === 'tax' && isAdmin()) html = taxView();
   else if(view === 'more') html = moreView();
   else html = listView();
   html += bottomNav();
@@ -1831,7 +2004,7 @@ function listView(){
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
       + '<label for="nTax" style="flex:1;min-width:0;font-size:14px">Татварын хувь '
       + '<span class="rdate" style="display:inline">(баримтгүй зардалд)</span></label>'
-      + '<input id="nTax" inputmode="decimal" value="'+TAX_DEF+'" style="width:70px;text-align:right"><b>%</b></div>'
+      + '<input id="nTax" inputmode="decimal" value="'+curCit()+'" style="width:70px;text-align:right"><b>%</b></div>'
       + '<label class="check" style="margin:0 0 10px;min-height:40px"><input type="checkbox" id="nVat">'
       + '<span>НӨАТ-тэй <span class="rdate" style="display:inline">· гэрээний '+VAT_PCT+'% зардалд бүртгэгдэнэ</span></span></label>'
       + '<div class="chips">' + TYPES.map(t =>
@@ -2094,7 +2267,7 @@ function detailView(j){
   const s = spent(j), e = earned(j), av = assetVal(j), wd = wageDue(j);
   const st = jobStatus(j), t = typeOf(j.type), dates = jobDates(j);
   const backTo = view === 'done' ? 'Дууссан ажил' : (view === 'types' ? 'Ажлын төрлөөр'
-    : (view === 'coprof' ? 'Компанийн ашиг' : 'Ажлууд'));
+    : (view === 'coprof' ? 'Компанийн ашиг' : (view === 'tax' ? 'Татвар' : 'Ажлууд')));
   let h = '<div class="jhd">'
     + '<button class="bk" onclick="openId=null;editContract=false;ui={};render()">'+IC.back+backTo+'</button>'
     + '<h1>'+esc(j.name)+'</h1><div class="tg">'
@@ -3713,7 +3886,7 @@ function addJob(){
   const sd = (document.getElementById('nStart')||{}).value || '';
   const ed = (document.getElementById('nEnd')||{}).value || '';
   let tx = parseFloat(String((document.getElementById('nTax')||{}).value||'').replace(',','.'));
-  if(!(tx >= 0) || tx > 100) tx = TAX_DEF;
+  if(!(tx >= 0) || tx > 100) tx = curCit();
   const vat = !!((document.getElementById('nVat')||{}).checked);
   const nj = {id:uid(), name, contract:c, type:newType, owner:admin||me, members:mem,
     startDate:sd, endDate:ed, createdBy:me, createdAt:Date.now(), taxPct: tx, vat: vat,
@@ -3733,8 +3906,8 @@ function shortBy(em){
 }
 
 // ---------- татвар ----------
-const VAT_PCT = 10, WTAX_PCT = 10, TAX_DEF = 10;
-const jobTaxPct = j => (typeof j.taxPct === 'number') ? j.taxPct : TAX_DEF;
+const VAT_PCT = 10, WTAX_PCT = 10;
+const jobTaxPct = j => (typeof j.taxPct === 'number') ? j.taxPct : curCit();
 // баримтгүй зардалд холбогдох татварын мөрийг дахин тооцно
 function taxRowFor(j, e){
   j.expenses = j.expenses.filter(x => x.ofId !== e.id);
@@ -3770,6 +3943,24 @@ function saveTaxPct(){
   j.expenses.filter(e => e.receipt === false && e.cat !== 'wage' && !e.auto).forEach(e => taxRowFor(j, e));
   ui = {}; save(); render();
 }
+function saveCit(){
+  if(!isAdmin()) return;
+  const v = parseFloat(String((document.getElementById('citIn')||{}).value||'').replace(',','.'));
+  if(!(v >= 0) || v > 100){ alert('Хувийг 0–100 хооронд оруулна уу.'); return; }
+  citPct = Math.round(v*100)/100;
+  saveMatUsers(); ui = {}; render();
+}
+// компанийн хувиас өөр хувьтай идэвхтэй ажлууд
+const citOff = () => jobs.filter(j => !j.done && jobTaxPct(j) !== curCit());
+function applyCit(){
+  if(!isAdmin()) return;
+  const p = curCit();
+  citOff().forEach(j => {
+    j.taxPct = p;
+    j.expenses.filter(e => e.receipt === false && e.cat !== 'wage' && !e.auto).forEach(e => taxRowFor(j, e));
+  });
+  save(); ui = {}; render();
+}
 function toggleReceipt(eid){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const e = j.expenses.find(x=>x.id===eid); if(!e || e.auto) return;
@@ -3779,6 +3970,9 @@ function toggleReceipt(eid){
 }
 function taxBox(j){
   const vatAmt = Math.round((j.contract||0) * VAT_PCT / 100);
+  const txT = j.expenses.filter(e => e.cat === 'tax').reduce((t,e)=>t+(e.amount||0), 0);
+  const nr = j.expenses.filter(e => e.receipt === false && !e.auto && e.cat !== 'tax');
+  const nrT = nr.reduce((t,e)=>t+(e.amount||0), 0);
   return '<div style="margin-top:8px;padding-top:10px;border-top:1px solid var(--line)">'
     + '<div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Татвар</div>'
     + '<div style="display:flex;align-items:center;gap:8px">'
@@ -3788,6 +3982,8 @@ function taxBox(j){
     + '<label class="check" style="margin:8px 0 0;min-height:44px">'
     + '<input type="checkbox" onchange="toggleVat()"'+(j.vat?' checked':'')+'>'
     + '<span>НӨАТ-тэй <span class="rdate" style="display:inline">· гэрээний '+VAT_PCT+'% = '+fmt(vatAmt)+' зардалд</span></span></label>'
+    + '<div class="rdate" style="margin-top:2px">Энэ ажлын татвар: <b style="color:var(--ink)">'+fmt(txT)+'</b>'
+    + (nr.length ? ' · баримтгүй '+nr.length+' зардал '+fmt(nrT) : ' · баримтгүй зардал алга')+'</div>'
     + '</div>';
 }
 
@@ -4260,7 +4456,7 @@ function boot(){
     me = u ? (u.email||'').toLowerCase() : null;
     jobs = []; roster = []; stock = []; shadow = {}; rshadow = {}; sshadow = {}; admin = null;
     overhead = []; oshadow = {}; cpYear = null; sups = []; supShadow = {};
-    matUsers = []; matPct = null;
+    matUsers = []; matPct = null; citPct = null;
     booted = !me; ui = {}; openId = null; view = 'list';
     if(!me){ render(); return; }
     try{ localStorage.setItem('last-email', me); }catch(e){}
@@ -4271,6 +4467,7 @@ function boot(){
         admin = (d.data().email||'').toLowerCase();
         matUsers = (d.data().mat||[]).map(x => String(x).toLowerCase());
         matPct = (d.data().matPctSet && typeof d.data().matPct === 'number') ? d.data().matPct : null;
+        citPct = (d.data().citSet && typeof d.data().citPct === 'number') ? d.data().citPct : null;
         subscribe();
       } else {
         F.setDoc(ref, {email: me})
