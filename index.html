@@ -408,7 +408,7 @@ function clean(v){
 }
 
 const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses','plan','stops'];
-const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct','startDate','endDate'];
+const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct','startDate','endDate','taxPct','vat'];
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
 const isAdmin = () => !!me && me === admin;
@@ -1066,6 +1066,7 @@ function settingsCard(j){
         '<button class="chip'+(j.type===t.k?' on':'')+'" onclick="setType(\''+t.k+'\')">'+t.t+'</button>').join('') + '</div>'
     + '<label class="check" style="margin:8px 0 0;min-height:44px;padding-top:8px;border-top:1px solid var(--line)">'
     + '<input type="checkbox" onchange="toggleDone()"'+(j.done?' checked':'')+'>Ажил дууссан</label>'
+    + taxBox(j)
     + (j.createdBy && j.createdBy !== j.owner
         ? '<div class="rdate" style="margin-top:6px">Үүсгэсэн: '+esc(j.createdBy)+'</div>' : '')
     + memberBox(j) + '</div>';
@@ -1825,8 +1826,14 @@ function listView(){
       + '<input id="nContract" placeholder="Гэрээний дүн (₮)" inputmode="numeric" oninput="liveNum(this)" style="margin-bottom:10px">'
       + '<div class="mlabel" style="margin-bottom:5px">Төслийн хугацаа</div>'
       + '<div style="display:flex;gap:8px;margin-bottom:12px">'
-      + '<input id="nStart" type="date" value="'+today()+'">'
-      + '<input id="nEnd" type="date"></div>'
+      + '<input id="nStart" type="date" value="'+today()+'" style="min-width:0">'
+      + '<input id="nEnd" type="date" style="min-width:0"></div>'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+      + '<label for="nTax" style="flex:1;min-width:0;font-size:14px">Татварын хувь '
+      + '<span class="rdate" style="display:inline">(баримтгүй зардалд)</span></label>'
+      + '<input id="nTax" inputmode="decimal" value="'+TAX_DEF+'" style="width:70px;text-align:right"><b>%</b></div>'
+      + '<label class="check" style="margin:0 0 10px;min-height:40px"><input type="checkbox" id="nVat">'
+      + '<span>НӨАТ-тэй <span class="rdate" style="display:inline">· гэрээний '+VAT_PCT+'% зардалд бүртгэгдэнэ</span></span></label>'
       + '<div class="chips">' + TYPES.map(t =>
           '<button class="chip'+(t.k===newType?' on':'')+'" onclick="pickType(this,\''+t.k+'\')">'+t.t+'</button>'
         ).join('') + '</div>'
@@ -2391,7 +2398,9 @@ function detailView(j){
         '<button class="chip'+(c.k===selCat?' on':'')+'" onclick="pickCat(this,\''+c.k+'\')">'
         + '<i class="cd" style="background:'+c.c+'"></i>'+c.t+'</button>'
       ).join('') + '</div>'
-      + '<label class="check" style="min-height:40px"><input type="checkbox" id="eAsset">Үндсэн хөрөнгө болж үлдэнэ</label>';
+      + '<label class="check" style="min-height:40px"><input type="checkbox" id="eRcpt">'
+      + '<span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '+jobTaxPct(j)+'% татвар нэмж бүртгэгдэнэ</span></span></label>'
+      + '<label class="check" style="min-height:40px;margin-top:0"><input type="checkbox" id="eAsset">Үндсэн хөрөнгө болж үлдэнэ</label>';
   }
   h += '<button class="btn '+(isExp ? '' : 'blue')+'" style="min-height:48px;margin-top:'+(isExp ? '0' : '14px')+'" onclick="addEntry()">'
     + (isExp ? 'Зардал нэмэх' : 'Орлого нэмэх')+'</button></div>';
@@ -2447,17 +2456,33 @@ function detailView(j){
       h += '<div class="erow'+(isExp && it.asset ? ' asset' : '')+'">'
         + '<span class="dot" style="background:'+dc+'"></span>'
         + '<div class="bd'+(isExp ? ' tap' : '')+'"'+(isExp ? ' onclick="toggleECat(\''+it.id+'\')"' : '')+'>'
-        + '<div class="ds">'+esc(it.desc)+(it.asset ? '<span class="tag">хөрөнгө</span>' : '')+'</div>'
+        + '<div class="ds">'+esc(it.desc)+(it.asset ? '<span class="tag">хөрөнгө</span>' : '')
+        + (isExp && it.receipt === false ? '<span class="tag" style="background:#FBF0D9;color:#7A4F00">баримтгүй</span>' : '')
+        + (isExp && it.auto ? '<span class="tag" style="background:#ECEFF1;color:#5E6B70">автомат</span>' : '')+'</div>'
         + '<div class="mt">'+(isExp ? (isBon ? 'Урамшуулал' : c.t)+' · ' : '')+shortDate(it.date)
         + (it.by ? ' · '+esc(shortBy(it.by)) : '')+'</div></div>'
         + '<span class="am">'+(isExp ? '−' : '+')+fmt(it.amount)+'</span>'
-        + '<button class="x" aria-label="Устгах" onclick="delEntry(\''+it.id+'\')">×</button></div>';
-      if(isExp && ui.eCat === it.id){
+        + (isExp && it.auto === 'vat'
+            ? '<span style="width:40px;flex:none"></span>'
+            : '<button class="x" aria-label="Устгах" onclick="delEntry(\''+it.id+'\')">×</button>')+'</div>';
+      if(isExp && ui.eCat === it.id && it.auto){
+        h += '<div class="ecat"><div class="rdate" style="margin-top:8px">'
+          + (it.auto === 'vat' ? 'НӨАТ-ын мөрийг Тойм → Татвар хэсгээс НӨАТ-тэй сонголтоор удирдана.'
+                               : 'Баримтгүй зардлаас автоматаар бодогдсон татвар. Үндсэн зардлыг нь баримттай болговол хасагдана.')
+          + '</div></div>';
+      } else if(isExp && ui.eCat === it.id){
         h += '<div class="ecat"><div class="fl" style="margin-top:6px">Ангилал солих</div><div class="chips" style="margin:0">'
           + CATS.filter(x => x.k !== 'wage' || c.k === 'wage').map(x =>
               '<button class="chip'+(x.k===c.k?' on':'')+'" onclick="setCat(\''+it.id+'\',\''+x.k+'\')">'
               + '<i class="cd" style="background:'+x.c+'"></i>'+x.t+'</button>').join('')
-          + '</div></div>';
+          + '</div>'
+          + (it.cat !== 'tax'
+              ? '<label class="check" style="margin:10px 0 0;min-height:40px"><input type="checkbox" onchange="toggleReceipt(\''+it.id+'\')"'
+                + (it.receipt === false ? '' : ' checked')+'>'
+                + '<span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
+                + (c.k === 'wage' ? WTAX_PCT : jobTaxPct(j))+'% татвар</span></span></label>'
+              : '')
+          + '</div>';
       }
     });
     h += '</div>';
@@ -2857,7 +2882,7 @@ function doMove(id, kind){
     setMatJob(jobId);
     const eid = uid();
     j.expenses.push({id: eid, desc: 'Материал \u2014 '+it.name+' ('+nd(q)+' ш × '+fmt(pr)+')',
-      amount: q*pr, date: dt, cat: 'mat', asset: false, by: me||''});
+      amount: q*pr, date: dt, cat: 'mat', asset: false, receipt: true, by: me||''});
     it.moves = it.moves || [];
     it.moves.push(Object.assign({id: uid(), type:'job', qty: q, price: pr, cost: it.cost||0, date: dt, jobId: jobId, expenseId: eid}, sx));
     save();
@@ -3196,13 +3221,19 @@ function rPayBox(r){
     }
     h += '</div>';
   }
+  const wTax = ui.rpRcpt ? 0 : Math.round((tW + tB) * WTAX_PCT / 100);
   h += '<input id="rpDate" type="date" value="'+today()+'" style="margin-top:10px">'
+    + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.rpRcpt?' checked':'')
+    + ' onchange="ui.rpRcpt=this.checked;render()"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
+    + WTAX_PCT+'% татвар ажил дээр зардал болно</span></span></label>'
     + '<div class="calc" style="margin:8px 0">'
     + (tW > 0 ? '<div class="ln"><span>Цалин</span><b>'+fmt(tW)+'</b></div>' : '')
     + (tB > 0 ? '<div class="ln"><span>Ашгийн урамшуулал</span><b>'+fmt(tB)+'</b></div>' : '')
     + (ma.amt > 0 ? '<div class="ln"><span>Борлуулалтын урамшуулал</span><b>'+fmt(ma.amt)+'</b></div>' : '')
     + '<div class="ln tot"><span>Нийт олгох</span>'
-    + '<b class="pos">'+fmt(tW + tB + ma.amt)+'</b></div></div>'
+    + '<b class="pos">'+fmt(tW + tB + ma.amt)+'</b></div>'
+    + (wTax > 0 ? '<div class="ln" style="margin-top:6px"><span>Татвар '+WTAX_PCT+'% (ажил дээр зардал)</span><b class="neg">+'+fmt(wTax)+'</b></div>' : '')
+    + '</div>'
     + '<div class="btns"><button class="btn"'+((tW+tB+ma.amt)>0?'':' disabled')
     + ' onclick="payRosterWage(\''+r.id+'\')">Олгох</button>'
     + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
@@ -3233,6 +3264,9 @@ function rBonBox(r){
   });
   h += '<input id="rbNote" placeholder="Шалтгаан (сайн ажилласан, ашгийн урамшуулал…)" style="margin-top:10px">'
     + '<input id="rbDate" type="date" value="'+today()+'">'
+    + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.rbRcpt?' checked':'')
+    + ' onchange="ui.rbRcpt=this.checked"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
+    + WTAX_PCT+'% татвар ажил дээр зардал болно</span></span></label>'
     + '<div class="btns"><button class="btn"'+(amt>0 && totDays>0?'':' disabled')
     + ' onclick="payRosterBonus(\''+r.id+'\')">Олгох</button>'
     + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
@@ -3261,8 +3295,10 @@ function payRosterWage(rid){
       x.j.wagePays = x.j.wagePays || [];
       x.j.wagePays.push({id: uid(), workerId: x.w.id, days: days, amount: a.wage,
         date: dt, expenseId: eid});
-      x.j.expenses.push({id: eid, desc: 'Цалин \u2014 '+x.w.name+' ('+nd(days)+' өдөр)',
-        amount: a.wage, date: dt, cat: 'wage', asset: false});
+      const we = {id: eid, desc: 'Цалин \u2014 '+x.w.name+' ('+nd(days)+' өдөр)',
+        amount: a.wage, date: dt, cat: 'wage', asset: false, receipt: !!ui.rpRcpt, by: me||''};
+      x.j.expenses.push(we);
+      taxRowFor(x.j, we);
     }
     if(a.bon > 0){
       any = true;
@@ -3270,8 +3306,10 @@ function payRosterWage(rid){
       x.j.bonuses = x.j.bonuses || [];
       x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: a.bon, note: 'Ашгийн урамшуулал',
         kind: 'profit', date: dt, expenseId: bid});
-      x.j.expenses.push({id: bid, desc: 'Ашгийн урамшуулал \u2014 '+x.w.name
-        + ' ('+nd(x.days)+' өдөр)', amount: a.bon, date: dt, cat: 'wage', asset: false});
+      const be = {id: bid, desc: 'Ашгийн урамшуулал \u2014 '+x.w.name
+        + ' ('+nd(x.days)+' өдөр)', amount: a.bon, date: dt, cat: 'wage', asset: false, receipt: !!ui.rpRcpt, by: me||''};
+      x.j.expenses.push(be);
+      taxRowFor(x.j, be);
     }
   });
   if(!any){ alert('Олгох дүнг оруулна уу.'); return; }
@@ -3294,8 +3332,10 @@ function payRosterBonus(rid){
     x.j.bonuses = x.j.bonuses || [];
     x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: a, note: note || 'Урамшуулал',
       date: dt, expenseId: eid});
-    x.j.expenses.push({id: eid, desc: 'Урамшуулал \u2014 '+x.w.name+(note?' ('+note+')':''),
-      amount: a, date: dt, cat: 'wage', asset: false});
+    const me2 = {id: eid, desc: 'Урамшуулал \u2014 '+x.w.name+(note?' ('+note+')':''),
+      amount: a, date: dt, cat: 'wage', asset: false, receipt: !!ui.rbRcpt, by: me||''};
+    x.j.expenses.push(me2);
+    taxRowFor(x.j, me2);
   });
   save(); ui = {}; render();
 }
@@ -3672,9 +3712,14 @@ function addJob(){
   const mem = admin && admin !== me ? [admin, me] : [me];
   const sd = (document.getElementById('nStart')||{}).value || '';
   const ed = (document.getElementById('nEnd')||{}).value || '';
-  jobs.unshift({id:uid(), name, contract:c, type:newType, owner:admin||me, members:mem,
-    startDate:sd, endDate:ed, createdBy:me, createdAt:Date.now(),
-    incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[], plan:[], stops:[]});
+  let tx = parseFloat(String((document.getElementById('nTax')||{}).value||'').replace(',','.'));
+  if(!(tx >= 0) || tx > 100) tx = TAX_DEF;
+  const vat = !!((document.getElementById('nVat')||{}).checked);
+  const nj = {id:uid(), name, contract:c, type:newType, owner:admin||me, members:mem,
+    startDate:sd, endDate:ed, createdBy:me, createdAt:Date.now(), taxPct: tx, vat: vat,
+    incomes:[], expenses:[], labor:[], workers:[], wagePays:[], bonuses:[], plan:[], stops:[]};
+  syncVat(nj);
+  jobs.unshift(nj);
   newJob=false; save(); render();
 }
 
@@ -3685,6 +3730,65 @@ function shortBy(em){
   if(me && e === me) return 'би';
   const i = e.indexOf('@');
   return i > 0 ? e.slice(0, i) : e;
+}
+
+// ---------- татвар ----------
+const VAT_PCT = 10, WTAX_PCT = 10, TAX_DEF = 10;
+const jobTaxPct = j => (typeof j.taxPct === 'number') ? j.taxPct : TAX_DEF;
+// баримтгүй зардалд холбогдох татварын мөрийг дахин тооцно
+function taxRowFor(j, e){
+  j.expenses = j.expenses.filter(x => x.ofId !== e.id);
+  if(e.receipt !== false || e.auto || e.cat === 'tax') return;
+  const wage = e.cat === 'wage';
+  const pct = wage ? WTAX_PCT : jobTaxPct(j);
+  if(!(pct > 0)) return;
+  j.expenses.push({id: uid(), desc: 'Татвар '+pct+'% \u2014 '+e.desc+' (баримтгүй)',
+    amount: Math.round((e.amount||0) * pct / 100), date: e.date, cat: 'tax', asset: false,
+    auto: wage ? 'wtax' : 'notax', ofId: e.id, receipt: true, by: e.by || me || ''});
+}
+// НӨАТ-ын мөрийг гэрээний дүнтэй тааруулна
+function syncVat(j){
+  const cur = j.expenses.find(x => x.auto === 'vat');
+  if(!j.vat){
+    if(cur) j.expenses = j.expenses.filter(x => x.auto !== 'vat');
+    return;
+  }
+  const amt = Math.round((j.contract||0) * VAT_PCT / 100);
+  if(cur){ cur.amount = amt; cur.desc = 'НӨАТ '+VAT_PCT+'% (гэрээний дүнгээс)'; }
+  else j.expenses.push({id: uid(), desc: 'НӨАТ '+VAT_PCT+'% (гэрээний дүнгээс)', amount: amt,
+    date: j.startDate || today(), cat: 'tax', asset: false, auto: 'vat', receipt: true, by: me || ''});
+}
+function toggleVat(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  j.vat = !j.vat; syncVat(j); save(); render();
+}
+function saveTaxPct(){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const v = parseFloat(String((document.getElementById('txPct')||{}).value||'').replace(',','.'));
+  if(!(v >= 0) || v > 100){ alert('Татварын хувийг 0–100 хооронд оруулна уу.'); return; }
+  j.taxPct = v;
+  j.expenses.filter(e => e.receipt === false && e.cat !== 'wage' && !e.auto).forEach(e => taxRowFor(j, e));
+  ui = {}; save(); render();
+}
+function toggleReceipt(eid){
+  const j = jobs.find(x=>x.id===openId); if(!j) return;
+  const e = j.expenses.find(x=>x.id===eid); if(!e || e.auto) return;
+  e.receipt = (e.receipt === false);
+  taxRowFor(j, e);
+  save(); render();
+}
+function taxBox(j){
+  const vatAmt = Math.round((j.contract||0) * VAT_PCT / 100);
+  return '<div style="margin-top:8px;padding-top:10px;border-top:1px solid var(--line)">'
+    + '<div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Татвар</div>'
+    + '<div style="display:flex;align-items:center;gap:8px">'
+    + '<label for="txPct" style="flex:1;min-width:0;font-size:14px">Баримтгүй зардлын татвар</label>'
+    + '<input id="txPct" inputmode="decimal" value="'+jobTaxPct(j)+'" style="width:70px;text-align:right">'
+    + '<b>%</b><button class="small" onclick="saveTaxPct()">Хадгалах</button></div>'
+    + '<label class="check" style="margin:8px 0 0;min-height:44px">'
+    + '<input type="checkbox" onchange="toggleVat()"'+(j.vat?' checked':'')+'>'
+    + '<span>НӨАТ-тэй <span class="rdate" style="display:inline">· гэрээний '+VAT_PCT+'% = '+fmt(vatAmt)+' зардалд</span></span></label>'
+    + '</div>';
 }
 
 function addEntry(){
@@ -3701,7 +3805,14 @@ function addEntry(){
     cat: tab==='exp' ? selCat : '',
     by: me || ''
   };
-  (tab==='exp'? j.expenses : j.incomes).push(entry);
+  if(tab === 'exp'){
+    const rc = document.getElementById('eRcpt');
+    entry.receipt = !!(rc && rc.checked);
+    j.expenses.push(entry);
+    taxRowFor(j, entry);
+  } else {
+    j.incomes.push(entry);
+  }
   save(); render();
 }
 
@@ -4081,7 +4192,11 @@ function delLabor(lid){
 function delEntry(eid){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   if(tab==='exp'){
-    j.expenses = j.expenses.filter(e=>e.id!==eid);
+    const del = j.expenses.find(e=>e.id===eid);
+    if(del && del.auto === 'vat') return;
+    // татварын мөрийг устгавал үндсэн зардал нь баримттай гэж тооцогдоно
+    if(del && del.ofId){ const par = j.expenses.find(e=>e.id===del.ofId); if(par) par.receipt = true; }
+    j.expenses = j.expenses.filter(e=>e.id!==eid && e.ofId!==eid);
     j.wagePays = (j.wagePays||[]).filter(p=>p.expenseId!==eid);
     j.bonuses = (j.bonuses||[]).filter(b=>b.expenseId!==eid);
   }
@@ -4100,6 +4215,7 @@ function saveContract(){
   const j = jobs.find(x=>x.id===openId); if(!j) return;
   const c = num(document.getElementById('cEdit').value);
   if(c>=0) j.contract = c;
+  syncVat(j);
   editContract=false; save(); render();
 }
 
