@@ -78,6 +78,7 @@ input:focus{border-color:var(--ink)}
 .ramt{font-weight:600;white-space:nowrap}
 .tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#F4EEDC;
   color:var(--asset);font-size:11px;font-weight:600;vertical-align:1px}
+.cfbtn{background:none;border:0;padding:0;margin:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
 .rtag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;border:0;background:#FBF0D9;
   color:#7A4F00;font:inherit;font-size:11px;font-weight:600;vertical-align:1px;cursor:pointer}
 .x{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px 6px;
@@ -366,7 +367,7 @@ function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setIt
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
-let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false;
+let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false, cfOpen = false;
 let sups = [], supShadow = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
@@ -1369,6 +1370,44 @@ function cashFlows(){
   taxPays().forEach(p => F.push({d: p.date, a: -(p.amount||0), k: 'tax'}));
   return F.filter(f => f.d && f.a);
 }
+const CASHK = [['inc','Ажлын орлого'],['sell','Материал борлуулалт'],['exp','Ажлын зардал, цалин'],
+  ['oh','Байгууллагын зардал'],['sup','Нийлүүлэгчид төлсөн'],['buy','Материал (бэлнээр авсан)'],
+  ['mbon','Борлуулалтын урамшуулал'],['tax','Татвар төлсөн']];
+// оны мөнгөн урсгалын задаргаа (ангиллаар, сараар)
+function cashBreak(y, last, A, CF){
+  const td = today(), by = {}, mo = {};
+  let inn = 0, out = 0;
+  CF.forEach(f => {
+    if(f.d.slice(0,4) !== String(y) || f.d > td) return;
+    by[f.k] = (by[f.k]||0) + f.a;
+    const m = parseInt(f.d.slice(5,7),10);
+    const x = mo[m] = mo[m] || {i: 0, o: 0};
+    if(f.a > 0){ inn += f.a; x.i += f.a; } else { out -= f.a; x.o -= f.a; }
+  });
+  const ln = (l, v, cls) => '<div class="ln"><span>'+l+'</span><b'+(cls ? ' class="'+cls+'"' : '')+'>'+v+'</b></div>';
+  let h = '<div class="calc" style="margin:10px 0 0">';
+  if(A) h += ln('Оны эхний үлдэгдэл (1/1)', fmt(balAt((y-1)+'-12-31', A, CF)));
+  h += '<div class="rdate" style="margin:'+(A ? '8px' : '0')+' 0 2px;font-weight:600">Орсон</div>';
+  CASHK.filter(k => (by[k[0]]||0) > 0).forEach(k => { h += ln(k[1], '+'+fmt(by[k[0]]), 'pos'); });
+  h += '<div class="rdate" style="margin:8px 0 2px;font-weight:600">Гарсан</div>';
+  CASHK.filter(k => (by[k[0]]||0) < 0).forEach(k => { h += ln(k[1], '−'+fmt(-by[k[0]])); });
+  h += '<div class="ln tot"><span>Мөнгөн урсгал (орсон − гарсан)</span><b class="'+(inn-out<0?'neg':'pos')+'">'
+    + (inn-out > 0 ? '+' : '')+fmt(inn - out)+'</b></div>';
+  if(A){
+    const end = String(y) === td.slice(0,4) ? td : y+'-12-31';
+    h += ln(String(y) === td.slice(0,4) ? 'Одоогийн үлдэгдэл' : 'Оны эцсийн үлдэгдэл', fmt(balAt(end, A, CF)));
+  }
+  h += '</div><div class="rdate" style="margin:10px 0 4px;font-weight:600">Сараар</div>';
+  for(let i = last + 1; i >= 1; i--){
+    const x = mo[i]; if(!x) continue;
+    h += '<div style="padding:6px 0;border-top:1px solid #EFF2EE">'
+      + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>'+i+'-р сар</span>'
+      + '<b style="white-space:nowrap;color:'+(x.i-x.o<0?'var(--bad)':'var(--good)')+'">'
+      + (x.i-x.o > 0 ? '+' : '')+fmt(x.i - x.o)+'</b></div>'
+      + '<div class="rdate">орсон +'+fmt(x.i)+' · гарсан −'+fmt(x.o)+'</div></div>';
+  }
+  return h;
+}
 const bankDoc = () => overhead.find(o => o.kind === 'bank');
 // татварын албанд төлсөн төлбөрүүд (байгууллагын зардлын цуглуулгад нэг баримт)
 const taxPayDoc = () => overhead.find(o => o.kind === 'taxpay');
@@ -1557,16 +1596,19 @@ function cumChart(r, y, cur){
     + '<div><div class="mlabel">Ашиг · татварын өмнө</div>'
     + '<div style="font-size:22px;font-weight:700" class="'+(tot<0?'neg':'pos')+'">'+fmt(tot)+'</div></div>'
     + (A
-        ? '<div><div class="mlabel">Дансны үлдэгдэл</div>'
-          + '<div style="font-size:22px;font-weight:700;color:'+(bal<0?'var(--bad)':'var(--blue)')+'">'+fmt(bal)+'</div>'
-          + '<button class="lnk" style="font-size:12px;padding:0" onclick="ui=ui.bkEdit?{}:{bkEdit:1};render()">'
+        ? '<div><button class="cfbtn" aria-expanded="'+cfOpen+'" onclick="cfOpen=!cfOpen;render()">'
+          + '<div class="mlabel">Дансны үлдэгдэл <span style="color:var(--blue)">'+(cfOpen ? '⌃' : '›')+'</span></div>'
+          + '<div style="font-size:22px;font-weight:700;color:'+(bal<0?'var(--bad)':'var(--blue)')+'">'+fmt(bal)+'</div></button>'
+          + '<button class="lnk" style="font-size:12px;padding:0;display:block" onclick="ui=ui.bkEdit?{}:{bkEdit:1};render()">'
           + A.date.slice(5).replace('-', '/')+' шалгасан · засах</button></div>'
-        : '<div><div class="mlabel">Мөнгөн урсгал</div>'
-          + '<div style="font-size:22px;font-weight:700;color:'+(ctot<0?'var(--bad)':'var(--blue)')+'">'+(ctot>0?'+':'')+fmt(ctot)+'</div>'
-          + '<button class="lnk" style="font-size:12px;padding:0" onclick="ui=ui.bkEdit?{}:{bkEdit:1};render()">'
+        : '<div><button class="cfbtn" aria-expanded="'+cfOpen+'" onclick="cfOpen=!cfOpen;render()">'
+          + '<div class="mlabel">Мөнгөн урсгал <span style="color:var(--blue)">'+(cfOpen ? '⌃' : '›')+'</span></div>'
+          + '<div style="font-size:22px;font-weight:700;color:'+(ctot<0?'var(--bad)':'var(--blue)')+'">'+(ctot>0?'+':'')+fmt(ctot)+'</div></button>'
+          + '<button class="lnk" style="font-size:12px;padding:0;display:block" onclick="ui=ui.bkEdit?{}:{bkEdit:1};render()">'
           + 'дансны үлдэгдэл оруулах</button></div>')
     + '</div>'
     + (ui.bkEdit && isAdmin() ? bankForm(A ? {bal: bal} : null) : '')
+    + (cfOpen ? cashBreak(y, last, A, CF) : '')
     + s
     + '<div style="display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px">'
     + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2F6B4F;margin-right:5px"></i>ашиг</span>'
