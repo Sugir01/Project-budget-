@@ -3380,8 +3380,17 @@ function rPayBox(r){
   const list = rosterJobs(r).filter(x => x.due > 0 || x.bon > 0);
   const ma = matPayAmt(r);
   if(!list.length && !(ma.max > 0)) return '<div class="note" style="padding:8px 0 0">Олгох дүн алга.</div>';
-  let tW = 0, tB = 0;
-  list.forEach(x => { const a = payAlloc(x); tW += a.wage; tB += a.bon; });
+  let tW = 0, tB = 0, wT = 0, bT = 0;
+  const pW = curWtax();
+  // нэг ажлын урамшууллыг цалингийн татвар нэмэгдсэний дараах сангаар хязгаарлана
+  const bonCap = (x, a) => (a.bon > 0 && a.wage > 0 && !ui.rpRcpt && pW > 0)
+    ? Math.min(a.bon, leadShare(x.j, x.w.id, Math.round(a.wage * pW / 100))) : a.bon;
+  list.forEach(x => {
+    const a = payAlloc(x), b = bonCap(x, a);
+    tW += a.wage; tB += b;
+    if(!ui.rpRcpt && pW > 0 && a.wage > 0) wT += Math.round(a.wage * pW / 100);
+    bT += bonSplit(b, ui.rpRcpt).tax;
+  });
 
   let h = '<div class="inf" style="margin-top:10px">'
     + '<div class="rdate" style="margin-bottom:6px">Ажлаа сонгоод олгох дүнгээ бичнэ үү. '
@@ -3409,7 +3418,8 @@ function rPayBox(r){
         + '<div class="rdate" style="margin:5px 0 0 31px">'
         + 'Цалин '+fmt(a.wage)
         + (x.w.rate > 0 && a.wage > 0 ? ' ('+nd(Math.round(a.wage/x.w.rate*100)/100)+' өдөр)' : '')
-        + ' · урамшуулал '+fmt(a.bon)
+        + ' · урамшуулал '+fmt(bonCap(x, a))
+        + (bonSplit(bonCap(x, a), ui.rpRcpt).tax > 0 ? ' (татвар −'+fmt(bonSplit(bonCap(x, a), ui.rpRcpt).tax)+')' : '')
         + (a.amt < a.max ? ' · үлдэх '+fmt(a.max - a.amt) : '')+'</div>';
     }
     h += '</div>';
@@ -3434,23 +3444,31 @@ function rPayBox(r){
     }
     h += '</div>';
   }
-  const wTax = ui.rpRcpt ? 0 : Math.round((tW + tB) * curWtax() / 100);
   h += '<input id="rpDate" type="date" value="'+today()+'" style="margin-top:10px">'
-    + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.rpRcpt?' checked':'')
-    + ' onchange="ui.rpRcpt=this.checked;render()"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
-    + curWtax()+'% татвар ажил дээр зардал болно</span></span></label>'
-    + '<div class="calc" style="margin:8px 0">'
-    + (tW > 0 ? '<div class="ln"><span>Цалин</span><b>'+fmt(tW)+'</b></div>' : '')
-    + (tB > 0 ? '<div class="ln"><span>Ашгийн урамшуулал</span><b>'+fmt(tB)+'</b></div>' : '')
-    + (ma.amt > 0 ? '<div class="ln"><span>Борлуулалтын урамшуулал</span><b>'+fmt(ma.amt)+'</b></div>' : '')
-    + '<div class="ln tot"><span>Нийт олгох</span>'
-    + '<b class="pos">'+fmt(tW + tB + ma.amt)+'</b></div>'
-    + (wTax > 0 ? '<div class="ln" style="margin-top:6px"><span>Татвар '+curWtax()+'% (ажил дээр зардал)</span><b class="neg">+'+fmt(wTax)+'</b></div>' : '')
-    + '</div>'
+    + rcptLabel(ui.rpRcpt, 'ui.rpRcpt=this.checked;render()')
+    + payCalc(tW, tB, bT, ma.amt, wT, '')
     + '<div class="btns"><button class="btn"'+((tW+tB+ma.amt)>0?'':' disabled')
     + ' onclick="payRosterWage(\''+r.id+'\')">Олгох</button>'
     + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
   return h;
+}
+
+function rcptLabel(on, fn){
+  return '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(on?' checked':'')
+    + ' onchange="'+fn+'"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол цалингийн '
+    + curWtax()+'% татвар ажил дээр зардал болж, урамшууллын татвар урамшууллаас суутгагдана</span></span></label>';
+}
+function payCalc(tW, tB, bT, mA, wT, who){
+  return '<div class="calc" style="margin:8px 0">'
+    + (tW > 0 ? '<div class="ln"><span>Цалин</span><b>'+fmt(tW)+'</b></div>' : '')
+    + (tB > 0 ? '<div class="ln"><span>Ашгийн урамшуулал</span><b>'+fmt(tB)+'</b></div>' : '')
+    + (bT > 0 ? '<div class="ln"><span>Урамшууллаас суутгах татвар '+curWtax()+'%</span><b class="neg">−'+fmt(bT)+'</b></div>' : '')
+    + (mA > 0 ? '<div class="ln"><span>Борлуулалтын урамшуулал</span><b>'+fmt(mA)+'</b></div>' : '')
+    + '<div class="ln tot"><span>Гарт олгох'+(who ? ' · '+who : '')+'</span>'
+    + '<b class="pos">'+fmt(tW + tB - bT + mA)+'</b></div>'
+    + (wT > 0 ? '<div class="ln" style="margin-top:6px"><span>Цалингийн татвар '+curWtax()+'% (ажил дээр зардал)</span>'
+        + '<b class="neg">+'+fmt(wT)+'</b></div>' : '')
+    + '</div>';
 }
 
 function rBonBox(r){
@@ -3479,7 +3497,7 @@ function rBonBox(r){
     + '<input id="rbDate" type="date" value="'+today()+'">'
     + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.rbRcpt?' checked':'')
     + ' onchange="ui.rbRcpt=this.checked"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
-    + curWtax()+'% татвар ажил дээр зардал болно</span></span></label>'
+    + curWtax()+'% татвар урамшууллаас суутгагдана</span></span></label>'
     + '<div class="btns"><button class="btn"'+(amt>0 && totDays>0?'':' disabled')
     + ' onclick="payRosterBonus(\''+r.id+'\')">Олгох</button>'
     + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
@@ -3506,15 +3524,12 @@ function payRosterWage(rid){
       payWageRow(x, a.wage, dt, ui.rpRcpt, '');
     }
     if(a.bon > 0){
-      any = true;
-      const bid = uid();
-      x.j.bonuses = x.j.bonuses || [];
-      x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: a.bon, note: 'Ашгийн урамшуулал',
-        kind: 'profit', date: dt, expenseId: bid});
-      const be = {id: bid, desc: 'Ашгийн урамшуулал \u2014 '+x.w.name
-        + ' ('+nd(x.days)+' өдөр)', amount: a.bon, date: dt, cat: 'wage', asset: false, receipt: !!ui.rpRcpt, by: me||''};
-      x.j.expenses.push(be);
-      taxRowFor(x.j, be);
+      // цалингийн татвар нэмэгдсэний дараах сангаас хэтрүүлэхгүй
+      const g = Math.min(a.bon, leadShare(x.j, x.w.id));
+      if(g > 0){
+        any = true;
+        payBonusRow(x, g, dt, ui.rpRcpt, {note: 'Ашгийн урамшуулал', kind: 'profit', sfx: ' ('+nd(x.days)+' өдөр)'});
+      }
     }
   });
   if(!any){ alert('Олгох дүнг оруулна уу.'); return; }
@@ -3532,6 +3547,26 @@ function payWageRow(x, amt, dt, rcpt, sfx){
     amount: amt, date: dt, cat: 'wage', asset: false, receipt: !!rcpt, by: me||''};
   x.j.expenses.push(we);
   taxRowFor(x.j, we);
+}
+// урамшууллыг гарт ба татварт хуваана (баримтгүй бол татвар урамшууллаас суутгагдана)
+function bonSplit(g, rcpt){
+  const p = curWtax();
+  if(rcpt || !(p > 0) || p >= 100 || !(g > 0)) return {net: g, tax: 0};
+  const net = Math.round(g * (100 - p) / 100);
+  return {net: net, tax: Math.round(net * p / (100 - p))};
+}
+function payBonusRow(x, gross, dt, rcpt, o){
+  const sp = bonSplit(gross, rcpt);
+  if(!(sp.net > 0)) return;
+  const bid = uid();
+  x.j.bonuses = x.j.bonuses || [];
+  x.j.bonuses.push(clean({id: uid(), workerId: x.w.id, amount: sp.net, note: o.note, kind: o.kind,
+    date: dt, expenseId: bid}));
+  const be = {id: bid, desc: (o.label||o.note)+' \u2014 '+x.w.name+(o.sfx||''), amount: sp.net, date: dt, cat: 'wage',
+    asset: false, receipt: !!rcpt, by: me||''};
+  if(sp.tax > 0) be.taxIn = true;
+  x.j.expenses.push(be);
+  taxRowFor(x.j, be);
 }
 const teamNames = () => roster.map(r => r.team).filter((t,i,a) => t && a.indexOf(t) === i)
   .sort((a,b) => a.localeCompare(b));
@@ -3577,22 +3612,55 @@ function dissolveTeam(tk){
   saveRoster(); ui = {}; render();
 }
 function openTPay(tk){
-  const pick = {};
-  teamMembers(tk).forEach(r => { if(rosterJobs(r).some(x => x.due > 0)) pick[r.id] = 1; });
-  ui = {tPay: tk, tPick: pick};
+  const pick = {}, bon = {};
+  teamMembers(tk).forEach(r => {
+    const xs = rosterJobs(r);
+    if(xs.some(x => x.due > 0)) pick[r.id] = 1;
+    if(xs.some(x => x.bon > 0)) bon[r.id] = 1;
+  });
+  ui = {tPay: tk, tPick: pick, tBon: bon};
   render();
 }
-function toggleTPick(rid){
-  ui.tPick = ui.tPick || {};
-  if(ui.tPick[rid]) delete ui.tPick[rid]; else ui.tPick[rid] = 1;
+function toggleTPick(rid, k){
+  k = k || 'tPick';
+  ui[k] = ui[k] || {};
+  if(ui[k][rid]) delete ui[k][rid]; else ui[k][rid] = 1;
   render();
+}
+const teamQ = tk => JSON.stringify(tk).slice(1, -1).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+// багийн олголтын төлөвлөгөө: сонгосон цалингийн татварыг тооцоод урамшууллыг бодно
+function teamPlan(tk){
+  const rc = !!ui.tpRcpt, p = curWtax();
+  const M = teamMembers(tk).map(r => ({r: r, xs: rosterJobs(r)}));
+  const extra = {};
+  M.forEach(m => {
+    if(!(ui.tPick && ui.tPick[m.r.id]) || rc || !(p > 0)) return;
+    m.xs.forEach(x => { if(x.due > 0) extra[x.j.id] = (extra[x.j.id]||0) + Math.round(x.due * p / 100); });
+  });
+  M.forEach(m => {
+    m.wl = m.xs.filter(x => x.due > 0);
+    m.wage = m.wl.reduce((t,x)=>t+x.due, 0);
+    m.bl = m.xs.filter(x => x.bon > 0).map(x => {
+      const g = leadShare(x.j, x.w.id, extra[x.j.id] || 0), sp = bonSplit(g, rc);
+      return {x: x, g: g, net: sp.net, tax: sp.tax};
+    }).filter(b => b.g > 0);
+    m.bon = m.bl.reduce((t,b)=>t+b.g, 0);
+    m.bon0 = m.xs.reduce((t,x)=>t+x.bon, 0);
+    m.bTax = m.bl.reduce((t,b)=>t+b.tax, 0);
+    m.wOn = !!(ui.tPick && ui.tPick[m.r.id]) && m.wage > 0;
+    m.bOn = !!(ui.tBon && ui.tBon[m.r.id]) && m.bon > 0;
+    m.wTax = (m.wOn && !rc && p > 0) ? m.wl.reduce((t,x)=>t+Math.round(x.due * p / 100), 0) : 0;
+  });
+  return M.filter(m => m.wage > 0 || m.bon > 0);
 }
 
 function teamCard(tk, ST){
   const mem = teamMembers(tk);
   const due = mem.reduce((t,r) => t + ST[r.id].due, 0);
+  const bon = mem.reduce((t,r) => t + ST[r.id].bonDue, 0);
   const days = mem.reduce((t,r) => t + ST[r.id].open.reduce((s,o)=>s+o.days, 0), 0);
-  const q = JSON.stringify(tk).slice(1, -1).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const q = teamQ(tk);
   let h = '<div class="card" style="padding:14px 16px 16px;margin-bottom:10px;border-left:4px solid #8B7BB8">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
     + '<div style="min-width:0;display:flex;gap:10px;align-items:center">'
@@ -3608,54 +3676,69 @@ function teamCard(tk, ST){
       + '<button class="small" onclick="ui={tForm:\''+q+'\'};render()">Засах</button>'
       + '<button class="small warn" onclick="dissolveTeam(\''+q+'\')">Багийг задлах</button></div>';
   }
-  h += '<div style="margin-top:10px"><div class="mlabel">Багийн олгох цалин</div>'
+  h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-top:10px">'
+    + '<div><div class="mlabel">Багийн олгох цалин</div>'
     + '<div style="font-size:20px;font-weight:700;margin-top:2px;color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</div></div>'
-    + '<div style="margin-top:8px">';
+    + (bon > 0 ? '<div style="text-align:right"><div class="mlabel">Ашгийн урамшуулал</div>'
+        + '<div style="font-size:17px;font-weight:700;margin-top:2px;color:var(--good)">'+fmt(bon)+'</div></div>' : '')
+    + '</div><div style="margin-top:8px">';
   mem.forEach(r => {
-    const d = ST[r.id].due;
+    const d = ST[r.id].due, b = ST[r.id].bonDue;
     h += '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-size:14px;border-top:1px solid #EFF2EE">'
       + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)
       + (r.role ? '<span style="color:var(--muted);font-size:12.5px"> · '+esc(r.role)+'</span>' : '')+'</span>'
-      + '<b style="white-space:nowrap;color:'+(d>0?'var(--ink)':'var(--muted)')+'">'+(d>0 ? fmt(d) : '\u2014')+'</b></div>';
+      + '<span style="text-align:right;white-space:nowrap"><b style="color:'+(d>0?'var(--ink)':'var(--muted)')+'">'
+      + (d>0 ? fmt(d) : '\u2014')+'</b>'
+      + (b > 0 ? '<span style="display:block;font-size:12px;color:var(--good);font-weight:600">урамшуулал +'+fmt(b)+'</span>' : '')
+      + '</span></div>';
   });
   h += '</div>';
-  if(isAdmin() && due > 0 && ui.tPay !== tk){
+  if(isAdmin() && (due + bon) > 0 && ui.tPay !== tk){
     h += '<button class="btn" style="background:var(--good);margin-top:12px;min-height:46px" '
-      + 'onclick="openTPay(\''+q+'\')">Бөөнд олгох · '+fmt(due)+'</button>';
+      + 'onclick="openTPay(\''+q+'\')">Бөөнд олгох · '+fmt(due + bon)+'</button>';
   }
   if(ui.tPay === tk) h += teamPayBox(tk);
   return h + '</div>';
 }
 
 function teamPayBox(tk){
-  const mem = teamMembers(tk).map(r => ({r: r, list: rosterJobs(r).filter(x => x.due > 0)})).filter(m => m.list.length);
-  if(!mem.length) return '<div class="note" style="padding:8px 0 0">Олгох цалин алга.</div>';
-  const q = JSON.stringify(tk).slice(1, -1).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-  let tot = 0, n = 0;
+  const M = teamPlan(tk);
+  if(!M.length) return '<div class="note" style="padding:8px 0 0">Олгох дүн алга.</div>';
+  const q = teamQ(tk);
+  const cb = (on, fn) => '<input type="checkbox"'+(on?' checked':'')
+    + ' style="width:21px;height:21px;accent-color:var(--good);flex:none;margin:0" onchange="'+fn+'">';
+  let tW = 0, tB = 0, bT = 0, wT = 0, n = 0;
   let h = '<div class="inf" style="margin-top:10px">'
-    + '<div class="rdate" style="margin-bottom:6px">Сонгосон гишүүдийн бүх ажил дээрх олгоогүй цалинг нэг дор олгоно. '
-    + 'Ажил тус бүр дээр цалингийн зардал бүртгэгдэнэ.</div>';
-  mem.forEach(m => {
-    const on = !!(ui.tPick && ui.tPick[m.r.id]);
-    const d = m.list.reduce((t,x)=>t+x.due, 0);
-    if(on){ tot += d; n++; }
-    h += '<label class="brow" style="cursor:pointer"><input type="checkbox"'+(on?' checked':'')
-      + ' style="width:21px;height:21px;accent-color:var(--good);flex:none;margin:0"'
-      + ' onchange="toggleTPick(\''+m.r.id+'\')">'
-      + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(m.r.name)+'</span>'
-      + '<span class="rdate">'+m.list.map(x => esc(x.j.name)+' '+nd(x.left)+' өдөр').join(' · ')+'</span></span>'
-      + '<b style="white-space:nowrap;color:'+(on?'var(--ink)':'var(--muted)')+'">'+fmt(d)+'</b></label>';
+    + '<div class="rdate" style="margin-bottom:6px">Сонгосон гишүүдийн бүх ажил дээрх олгоогүй цалин, ашгийн урамшууллыг '
+    + 'нэг дор олгоно. Ажил тус бүр дээр зардал бүртгэгдэнэ.</div>';
+  M.forEach(m => {
+    if(m.wOn){ tW += m.wage; wT += m.wTax; }
+    if(m.bOn){ tB += m.bon; bT += m.bTax; }
+    if(m.wOn || m.bOn) n++;
+    h += '<div style="padding:9px 0;border-bottom:1px solid #EFF2EE">'
+      + '<div style="font-size:15px;font-weight:600;margin-bottom:4px">'+esc(m.r.name)+'</div>';
+    if(m.wage > 0){
+      h += '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:3px 0">'
+        + cb(m.wOn, "toggleTPick('"+m.r.id+"')")
+        + '<span style="flex:1;min-width:0"><span style="font-size:14px">Цалин</span>'
+        + '<span class="rdate" style="display:block">'+m.wl.map(x => esc(x.j.name)+' '+nd(x.left)+' өдөр').join(' · ')+'</span></span>'
+        + '<b style="white-space:nowrap;color:'+(m.wOn?'var(--ink)':'var(--muted)')+'">'+fmt(m.wage)+'</b></label>';
+    }
+    if(m.bon > 0){
+      h += '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:3px 0">'
+        + cb(m.bOn, "toggleTPick('"+m.r.id+"','tBon')")
+        + '<span style="flex:1;min-width:0"><span style="font-size:14px">Ашгийн урамшуулал</span>'
+        + '<span class="rdate" style="display:block">'+m.bl.map(b => esc(b.x.j.name)).join(' · ')
+        + (m.bon < m.bon0 ? ' · цалингийн татвар '+fmt(m.bon0 - m.bon)+' хасагдсан' : '')
+        + (m.bTax > 0 ? ' · татвар −'+fmt(m.bTax)+', гарт '+fmt(m.bon - m.bTax) : '')+'</span></span>'
+        + '<b style="white-space:nowrap;color:'+(m.bOn?'var(--good)':'var(--muted)')+'">'+fmt(m.bon)+'</b></label>';
+    }
+    h += '</div>';
   });
-  const wTax = ui.tpRcpt ? 0 : Math.round(tot * curWtax() / 100);
   h += '<input id="tpDate" type="date" value="'+today()+'" style="margin-top:10px">'
-    + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.tpRcpt?' checked':'')
-    + ' onchange="ui.tpRcpt=this.checked;render()"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
-    + curWtax()+'% татвар ажил дээр зардал болно</span></span></label>'
-    + '<div class="calc" style="margin:8px 0">'
-    + '<div class="ln tot"><span>Нийт олгох · '+n+' хүн</span><b class="pos">'+fmt(tot)+'</b></div>'
-    + (wTax > 0 ? '<div class="ln" style="margin-top:6px"><span>Татвар '+curWtax()+'% (ажил дээр зардал)</span><b class="neg">+'+fmt(wTax)+'</b></div>' : '')
-    + '</div>'
-    + '<div class="btns"><button class="btn"'+(tot > 0 ? '' : ' disabled')+' onclick="payTeam(\''+q+'\')">Олгох</button>'
+    + rcptLabel(ui.tpRcpt, 'ui.tpRcpt=this.checked;render()')
+    + payCalc(tW, tB, bT, 0, wT, n+' хүн')
+    + '<div class="btns"><button class="btn"'+((tW + tB) > 0 ? '' : ' disabled')+' onclick="payTeam(\''+q+'\')">Олгох</button>'
     + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
   return h;
 }
@@ -3663,15 +3746,27 @@ function teamPayBox(tk){
 function payTeam(tk){
   if(!isAdmin()) return;
   const dt = (document.getElementById('tpDate')||{}).value || today();
-  const mem = teamMembers(tk).filter(r => ui.tPick && ui.tPick[r.id]);
+  const rc = !!ui.tpRcpt;
+  const M = teamPlan(tk);
   let any = false;
-  mem.forEach(r => {
-    rosterJobs(r).filter(x => x.due > 0).forEach(x => {
-      any = true;
-      payWageRow(x, x.due, dt, ui.tpRcpt, ' \u00b7 '+tk);
+  // 1) цалин
+  M.forEach(m => {
+    if(!m.wOn) return;
+    m.wl.forEach(x => { any = true; payWageRow(x, x.due, dt, rc, ' \u00b7 '+tk); });
+  });
+  // 2) урамшуулал — цалингийн татвар нэмэгдсэний дараах сангаас дахин бодно
+  M.forEach(m => {
+    if(!m.bOn) return;
+    m.bl.forEach(b => {
+      const g = leadShare(b.x.j, b.x.w.id);
+      if(g > 0){
+        any = true;
+        payBonusRow(b.x, g, dt, rc, {note: 'Ашгийн урамшуулал', kind: 'profit',
+          sfx: ' ('+nd(b.x.days)+' өдөр) \u00b7 '+tk});
+      }
     });
   });
-  if(!any){ alert('Гишүүн сонгоно уу.'); return; }
+  if(!any){ alert('Олгох зүйлээ сонгоно уу.'); return; }
   save(); ui = {}; render();
 }
 
@@ -3687,14 +3782,7 @@ function payRosterBonus(rid){
   list.forEach(x => {
     const a = Math.round(amt * x.days / totDays);
     if(a <= 0) return;
-    const eid = uid();
-    x.j.bonuses = x.j.bonuses || [];
-    x.j.bonuses.push({id: uid(), workerId: x.w.id, amount: a, note: note || 'Урамшуулал',
-      date: dt, expenseId: eid});
-    const me2 = {id: eid, desc: 'Урамшуулал \u2014 '+x.w.name+(note?' ('+note+')':''),
-      amount: a, date: dt, cat: 'wage', asset: false, receipt: !!ui.rbRcpt, by: me||''};
-    x.j.expenses.push(me2);
-    taxRowFor(x.j, me2);
+    payBonusRow(x, a, dt, ui.rbRcpt, {note: note || 'Урамшуулал', label: 'Урамшуулал', sfx: note ? ' ('+note+')' : ''});
   });
   save(); ui = {}; render();
 }
@@ -4101,8 +4189,10 @@ function taxRowFor(j, e){
   const wage = e.cat === 'wage';
   const pct = wage ? curWtax() : jobTaxPct(j);
   if(!(pct > 0)) return;
-  j.expenses.push({id: uid(), desc: 'Татвар '+pct+'% \u2014 '+e.desc+' (баримтгүй)',
-    amount: Math.round((e.amount||0) * pct / 100), date: e.date, cat: 'tax', asset: false,
+  // taxIn: татвар урамшууллаас суутгагдсан — e.amount нь гарт олгосон дүн
+  const tin = wage && e.taxIn && pct < 100;
+  j.expenses.push({id: uid(), desc: 'Татвар '+pct+'% \u2014 '+e.desc+(tin ? ' (урамшууллаас суутгасан)' : ' (баримтгүй)'),
+    amount: Math.round((e.amount||0) * pct / (tin ? (100 - pct) : 100)), date: e.date, cat: 'tax', asset: false,
     auto: wage ? 'wtax' : 'notax', ofId: e.id, receipt: true, by: e.by || me || ''});
 }
 // НӨАТ-ын мөрийг гэрээний дүнтэй тааруулна
@@ -4433,14 +4523,22 @@ function payWage(wid){
 const gotProfitBonus = (j,wid) => (j.bonuses||[]).some(b => b.workerId===wid && b.kind==='profit');
 
 // тухайн удирдагчид өмнө олгосон ашгийн урамшууллын нийлбэр
+// урамшууллаас суутгасан татвар (тухайн удирдагчийн авсанд тооцогдоно)
+const bonTaxIn = (j, b) => {
+  const e = (j.expenses||[]).find(x => x.id === b.expenseId);
+  if(!e || !e.taxIn) return 0;
+  const t = (j.expenses||[]).find(x => x.ofId === e.id && x.cat === 'tax');
+  return t ? (t.amount||0) : 0;
+};
 const paidProfit = (j,wid) => (j.bonuses||[])
   .filter(b => b.workerId===wid && b.kind==='profit')
-  .reduce((t,b)=>t+(b.amount||0), 0);
+  .reduce((t,b)=>t+(b.amount||0)+bonTaxIn(j, b), 0);
 
-function bonusCalc(j, Wall){
+// extra — энэ олголтоор нэмэгдэх зардал (баримтгүй цалингийн татвар)
+function bonusCalc(j, Wall, extra){
   const leads = (Wall || j.workers || []).filter(w => w.lead);
   const pct = j.coPct || 0;
-  const cost = spent(j) + wageDue(j);
+  const cost = spent(j) + wageDue(j) + (extra || 0);
   const gross = j.contract - cost;
   const coShare = j.contract * pct / 100;
   const pool = gross - coShare;                       // одоо үлдсэн сан
@@ -4469,8 +4567,8 @@ function bonusCalc(j, Wall){
 }
 
 // нэг удирдагчид ногдох ашгийн урамшуулал
-function leadShare(j, wid){
-  const c = bonusCalc(j, j.workers||[]);
+function leadShare(j, wid, extra){
+  const c = bonusCalc(j, j.workers||[], extra);
   if(c.pool <= 0) return 0;
   return c.shares[wid] || 0;
 }
