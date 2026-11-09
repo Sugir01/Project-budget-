@@ -299,6 +299,7 @@ input[type=range]{width:100%;accent-color:var(--blue);padding:0;border:none;back
 .erow .ds{font-size:15px;font-weight:500;overflow-wrap:anywhere}
 .erow .mt{font-size:12.5px;color:var(--muted);margin-top:2px}
 .erow .am{font-size:15px;font-weight:700;white-space:nowrap}
+.erow .am .amtx{display:block;font-size:11.5px;font-weight:600;color:#9A6200;text-align:right;margin-top:1px}
 .erow.asset{background:#FCFAF4}
 .ecat{padding:2px 14px 12px;border-bottom:1px solid #EEF1ED;background:#F7F9F6}
 .lnk{background:none;border:none;color:var(--blue);font-size:13.5px;font-weight:500;min-height:40px;padding:0 0 0 10px;
@@ -2603,11 +2604,21 @@ function detailView(j){
 
   let list = (isExp ? j.expenses : j.incomes).slice().sort((a,b)=> a.date<b.date?1:-1);
   const allTot = list.reduce((t,x)=>t+x.amount, 0);
+  // баримтгүйн татварыг тусад нь мөр болгохгүй — эх зардал дээр нь жижгээр +дүн
+  const tAt = {};
+  if(isExp){
+    const pid = {}; j.expenses.forEach(e => { pid[e.id] = 1; });
+    j.expenses.forEach(e => {
+      if(e.cat === 'tax' && e.ofId && pid[e.ofId] && (e.auto === 'notax' || e.auto === 'wtax')) tAt[e.ofId] = e;
+    });
+  }
+  const isAtt = e => e.cat === 'tax' && e.ofId && tAt[e.ofId] === e;
   const bonIds = {};
   (j.bonuses||[]).forEach(b => { if(b.expenseId) bonIds[b.expenseId] = 1; });
 
   h += '<div class="lhd"><h2>'+(isExp ? 'Зардлууд' : 'Орлогууд')+'</h2>'
-    + '<span>'+list.length+' бичилт · <b>'+fmt(allTot)+'</b></span></div>';
+    + '<span>'+(isExp && expFilter !== 'tax' ? list.filter(e => !isAtt(e)).length : list.length)
+    + ' бичилт · <b>'+fmt(allTot)+'</b></span></div>';
 
   if(isExp && list.length > 0){
     const keys = [];
@@ -2639,6 +2650,7 @@ function detailView(j){
     }
   }
 
+  if(isExp && expFilter !== 'tax') list = list.filter(e => !isAtt(e));
   if(list.length===0){
     h += '<div class="note">'+(isExp
       ? (expFilter ? 'Энэ ангилалд бичилт алга.' : 'Одоогоор зардал бүртгээгүй байна.')
@@ -2657,7 +2669,9 @@ function detailView(j){
         + (isExp && it.auto ? '<span class="tag" style="background:#ECEFF1;color:#5E6B70">автомат</span>' : '')+'</div>'
         + '<div class="mt">'+(isExp ? (isBon ? 'Урамшуулал' : c.t)+' · ' : '')+shortDate(it.date)
         + (it.by ? ' · '+esc(shortBy(it.by)) : '')+'</div></div>'
-        + '<span class="am">'+(isExp ? '−' : '+')+fmt(it.amount)+'</span>'
+        + '<span class="am">'+(isExp ? '−' : '+')+fmt(it.amount)
+        + (isExp && tAt[it.id] && expFilter !== 'tax' ? '<span class="amtx">+'+fmt(tAt[it.id].amount)+'</span>' : '')
+        + '</span>'
         + (isExp && it.auto === 'vat'
             ? '<span style="width:40px;flex:none"></span>'
             : '<button class="x" aria-label="Устгах" onclick="delEntry(\''+it.id+'\')">×</button>')+'</div>';
