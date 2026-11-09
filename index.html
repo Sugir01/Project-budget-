@@ -2095,6 +2095,54 @@ function progBars(j){
   return h;
 }
 
+// ---------- гүйцэтгэлийн төлбөр: гэрээ × хувь − авсан ----------
+function pfCalc(j, p){
+  const due = Math.round((j.contract||0) * (p||0) / 100);
+  return {due: due, amt: due - earned(j)};
+}
+function payCard(j){
+  const pr = Math.round(jobProgress(j));
+  const p = (typeof ui.pfPct === 'number') ? ui.pfPct : pr;
+  const c = pfCalc(j, p);
+  return '<div class="card" style="margin-bottom:14px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px 10px;flex-wrap:wrap">'
+    + '<span style="font-weight:700;font-size:15.5px;white-space:nowrap">Гүйцэтгэлийн төлбөр</span>'
+    + '<button class="lnk" style="font-size:12.5px;padding:0;white-space:nowrap" onclick="ui.pfPct='+pr+';render()">гүйцэтгэл '+pr+'%</button></div>'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">'
+    + '<label for="pfPct" style="font-size:14px;flex:1;min-width:0">Гүйцэтгэлийн хувь</label>'
+    + '<input id="pfPct" inputmode="decimal" value="'+p+'" style="width:76px;text-align:right" oninput="pfUpd(this.value)">'
+    + '<b>%</b></div>'
+    + '<div class="calc" style="margin:10px 0 0">'
+    + '<div class="ln"><span>Гэрээ '+fmt(j.contract)+' × <span id="pfP">'+p+'</span>%</span><b id="pfDue">'+fmt(c.due)+'</b></div>'
+    + '<div class="ln"><span>Авсан орлого</span><b>−'+fmt(earned(j))+'</b></div>'
+    + '<div class="ln tot"><span id="pfLbl">'+(c.amt >= 0 ? 'Авах дүн' : 'Илүү авсан')+'</span>'
+    + '<b id="pfAmt" style="font-size:19px;color:'+(c.amt > 0 ? 'var(--blue)' : 'var(--muted)')+'">'+fmt(Math.abs(c.amt))+'</b></div></div>'
+    + '<button class="btn blue" id="pfBtn" style="margin-top:10px;min-height:44px"'+(c.amt > 0 ? '' : ' disabled')
+    + ' onclick="pfFill()">Орлогын бичилт болгох</button></div>';
+}
+function pfUpd(v){
+  const j = jobs.find(x => x.id === openId); if(!j) return;
+  let p = parseFloat(String(v).replace(',', '.'));
+  if(!(p >= 0)) p = 0;
+  ui.pfPct = p;
+  const c = pfCalc(j, p), $ = id => document.getElementById(id);
+  $('pfP').textContent = p;
+  $('pfDue').textContent = fmt(c.due);
+  $('pfLbl').textContent = c.amt >= 0 ? 'Авах дүн' : 'Илүү авсан';
+  $('pfAmt').textContent = fmt(Math.abs(c.amt));
+  $('pfAmt').style.color = c.amt > 0 ? 'var(--blue)' : 'var(--muted)';
+  $('pfBtn').disabled = !(c.amt > 0);
+}
+function pfFill(){
+  const j = jobs.find(x => x.id === openId); if(!j) return;
+  const p = (typeof ui.pfPct === 'number') ? ui.pfPct : Math.round(jobProgress(j));
+  const c = pfCalc(j, p);
+  if(!(c.amt > 0)) return;
+  const d = document.getElementById('eDesc'), a = document.getElementById('eAmt');
+  if(d) d.value = 'Гүйцэтгэлийн төлбөр ('+p+'%)';
+  if(a){ a.value = group(String(c.amt)); a.focus(); if(a.scrollIntoView) a.scrollIntoView({block: 'center'}); }
+}
+
 function progressCard(j){
   const pr = jobProgress(j), s = spent(j), lag = lagOf(j);
   const md = manDays(j);
@@ -2318,6 +2366,7 @@ function detailView(j){
     return h;
   }
 
+  if(tab === 'inc') h += payCard(j);
   if(tab !== 'plan' && tab !== 'asset') h += '<div class="card" style="margin-bottom:14px">';
 
   if(tab === 'plan'){
