@@ -366,7 +366,7 @@ function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setIt
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
-let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false;
+let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false;
 let sups = [], supShadow = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
@@ -1353,7 +1353,11 @@ function cashFlows(){
   stock.forEach(it => (it.moves||[]).forEach(m => { if(m.type === 'job' && m.expenseId) stockExp[m.expenseId] = 1; }));
   jobs.forEach(j => {
     (j.incomes||[]).forEach(e => F.push({d: e.date, a: e.amount||0, k: 'inc'}));
-    (j.expenses||[]).forEach(e => { if(!stockExp[e.id]) F.push({d: e.date, a: -(e.amount||0), k: 'exp'}); });
+    // автомат татварын мөр (баримтгүйн, цалингийн, НӨАТ) — ногдуулалт; мөнгө нь татвар төлөхөд гарна
+    (j.expenses||[]).forEach(e => {
+      if(stockExp[e.id] || (e.cat === 'tax' && e.auto)) return;
+      F.push({d: e.date, a: -(e.amount||0), k: 'exp'});
+    });
   });
   stock.forEach(it => {
     (it.moves||[]).forEach(m => { if(m.type === 'sell') F.push({d: m.date, a: (m.qty||0) * (m.price||0), k: 'sell'}); });
@@ -1362,9 +1366,98 @@ function cashFlows(){
   sups.forEach(x => (x.pays||[]).forEach(p => F.push({d: p.date, a: -(p.amount||0), k: 'sup'})));
   ohEntries().forEach(e => F.push({d: e.date, a: -(e.amount||0), k: 'oh'}));
   roster.forEach(r => (r.mpays||[]).forEach(p => F.push({d: p.date, a: -(p.amount||0), k: 'mbon'})));
+  taxPays().forEach(p => F.push({d: p.date, a: -(p.amount||0), k: 'tax'}));
   return F.filter(f => f.d && f.a);
 }
 const bankDoc = () => overhead.find(o => o.kind === 'bank');
+// татварын албанд төлсөн төлбөрүүд (байгууллагын зардлын цуглуулгад нэг баримт)
+const taxPayDoc = () => overhead.find(o => o.kind === 'taxpay');
+const taxPays = () => ((taxPayDoc()||{}).pays || []);
+const TAXT = [['cit','ААНОАТ'],['pit','ХХОАТ'],['vat','НӨАТ'],['oth','Бусад']];
+const taxTName = k => (TAXT.find(x => x[0] === k) || [k, k])[1];
+// тухайн оны ногдсон (ажлын татварын мөр + ААНОАТ) ба төлсөн
+function taxDue(y, t){
+  t = t || taxYear(y);
+  const acc = {cit: t.cit + t.notax, pit: t.wtax, vat: t.vat, oth: 0};
+  const paid = {cit: 0, pit: 0, vat: 0, oth: 0};
+  taxPays().filter(p => String(p.y) === String(y)).forEach(p => { paid[p.t] = (paid[p.t]||0) + (p.amount||0); });
+  const left = {};
+  TAXT.forEach(x => { left[x[0]] = Math.max(0, acc[x[0]] - paid[x[0]]); });
+  return {acc: acc, paid: paid, left: left,
+          accT: TAXT.reduce((s,x)=>s+acc[x[0]], 0), paidT: TAXT.reduce((s,x)=>s+paid[x[0]], 0),
+          leftT: TAXT.reduce((s,x)=>s+left[x[0]], 0)};
+}
+function addTaxPay(){
+  if(!isAdmin()) return;
+  const y = txYear || parseInt(today().slice(0,4),10);
+  const k = ui.txT || 'cit';
+  const amt = Math.abs(num((document.getElementById('txAmt')||{}).value || ''));
+  const dt = (document.getElementById('txDate')||{}).value || today();
+  const note = ((document.getElementById('txNote')||{}).value || '').trim();
+  if(!(amt > 0)){ alert('Төлсөн дүнгээ оруулна уу.'); return; }
+  let d = taxPayDoc();
+  if(!d){ d = {id: uid(), kind: 'taxpay', desc: 'Татвар төлөлт', pays: [], by: me||'', owner: admin||me}; overhead.push(d); }
+  d.pays = (d.pays||[]).concat([clean({id: uid(), t: k, y: y, amount: amt, date: dt, note: note || undefined, by: me||''})]);
+  saveOH(); ui = {}; txOpenP = true; render();
+}
+function delTaxPay(id){
+  if(!isAdmin()) return;
+  const d = taxPayDoc(); if(!d) return;
+  d.pays = (d.pays||[]).filter(p => p.id !== id);
+  saveOH(); render();
+}
+function taxPayCard(y, t){
+  const D = taxDue(y, t), k = ui.txT || 'cit';
+  const P = taxPays().filter(p => String(p.y) === String(y)).sort((a,b) => a.date < b.date ? 1 : -1);
+  const SUB = {cit: 'ашгийн '+curCit()+'% + баримтгүй зардлын татвар', pit: 'цалин, урамшууллын татвар', vat: 'НӨАТ-тэй ажлууд', oth: 'торгууль, бусад'};
+  let h = '<div class="card" style="margin-bottom:12px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
+    + '<span style="font-weight:700;font-size:15px">Татвар төлөлт · '+y+'</span>'
+    + '<span class="rdate">ногдсон − төлсөн</span></div>'
+    + '<div class="calc" style="margin:8px 0 0">';
+  TAXT.forEach(x => {
+    const a = D.acc[x[0]], p = D.paid[x[0]];
+    if(!a && !p) return;
+    h += '<div class="ln"><span>'+x[1]+'<span class="rdate" style="display:block;margin-top:1px">'+SUB[x[0]]
+      + ' · ногдсон '+fmt(a)+' · төлсөн '+fmt(p)+'</span></span>'
+      + '<b style="white-space:nowrap;color:'+(a - p > 0 ? 'var(--bad)' : 'var(--good)')+'">'
+      + (a - p > 0 ? fmt(a - p) : (p > a ? 'илүү '+fmt(p - a) : '✓'))+'</b></div>';
+  });
+  h += '<div class="ln tot"><span>Төлөх үлдэгдэл</span><b class="'+(D.leftT > 0 ? 'neg' : 'pos')+'">'+fmt(D.leftT)+'</b></div></div>';
+  if(ui.txPay){
+    const def = D.left[k] || 0;
+    h += '<div class="inf" style="margin-top:10px">'
+      + '<div class="fl" style="margin-top:0">Татварын төрөл</div><div class="chips">'
+      + TAXT.map(x => '<button class="chip'+(x[0] === k ? ' on' : '')+'" onclick="ui.txT=\''+x[0]+'\';render()">'+x[1]+'</button>').join('')
+      + '</div>'
+      + '<div style="display:flex;gap:10px">'
+      + '<div style="flex:1.2;min-width:0"><label class="fl" for="txAmt">Төлсөн дүн (₮)</label>'
+      + '<input id="txAmt" inputmode="numeric" placeholder="0" oninput="liveNum(this)"'+(def > 0 ? ' value="'+group(String(def))+'"' : '')+'></div>'
+      + '<div style="flex:1;min-width:0"><label class="fl" for="txDate">Огноо</label>'
+      + '<input id="txDate" type="date" value="'+today()+'"></div></div>'
+      + '<input id="txNote" placeholder="Тэмдэглэл (жишээ: 3-р улирлын ААНОАТ)" style="margin-top:8px">'
+      + '<div class="rdate" style="margin-top:6px">'+y+' оны татварт тооцогдоно. Данснаас мөнгө гарсан өдрөөр мөнгөн урсгалд орно.</div>'
+      + '<div class="btns"><button class="btn" onclick="addTaxPay()">Хадгалах</button>'
+      + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  } else {
+    h += '<button class="btn" style="margin-top:10px;min-height:44px" onclick="ui={txPay:1};render()">Татвар төлсөн бүртгэх</button>';
+  }
+  if(P.length){
+    h += '<button class="lnk" style="margin-top:10px;padding:0" onclick="txOpenP=!txOpenP;render()">Төлсөн · '+P.length
+      + ' · '+fmt(D.paidT)+' '+(txOpenP ? '⌃' : '›')+'</button>';
+    if(txOpenP){
+      h += '<div style="margin-top:6px">';
+      P.forEach(p => {
+        h += '<div class="erow" style="padding:8px 0"><div class="bd"><div class="ds">'+taxTName(p.t)
+          + (p.note ? ' · '+esc(p.note) : '')+'</div><div class="mt">'+shortDate(p.date)+'</div></div>'
+          + '<span class="am">−'+fmt(p.amount)+'</span>'
+          + '<button class="x" aria-label="Устгах" onclick="delTaxPay(\''+p.id+'\')">×</button></div>';
+      });
+      h += '</div>';
+    }
+  }
+  return h + '</div>';
+}
 function bankAnchor(){
   const b = bankDoc(); if(!b || !(b.hist||[]).length) return null;
   return b.hist.slice().sort((x,y) => x.date < y.date ? 1 : (x.date > y.date ? -1 : (y.at||0) - (x.at||0)))[0];
@@ -1656,6 +1749,8 @@ function taxView(){
     + '<div class="pval" style="color:#F4C77A">'+fmt(noAll)+'</div></div>'
     + '<div class="pair"><div class="plabel">Баримттай байсан бол хэмнэх</div>'
     + '<div class="pval pos">'+fmt(t.save)+'</div></div></div></div>';
+
+  h += taxPayCard(y, t);
 
   const ln = (label, sub, v) => '<div class="ln"><span>'+label
     + (sub ? '<span class="rdate" style="display:block;margin-top:1px">'+sub+'</span>' : '')
