@@ -1346,18 +1346,85 @@ function ohHint(pct){
 }
 
 // оны эхнээс хуримтлагдсан ашгийн шугаман график
+// ---------- компанийн данс: мөнгөн урсгал, үлдэгдэл ----------
+// орсон (+) / гарсан (−) мөнгө огноотой. Агуулахаас ажилд гаргасан материал мөнгө биш.
+function cashFlows(){
+  const F = [], stockExp = {};
+  stock.forEach(it => (it.moves||[]).forEach(m => { if(m.type === 'job' && m.expenseId) stockExp[m.expenseId] = 1; }));
+  jobs.forEach(j => {
+    (j.incomes||[]).forEach(e => F.push({d: e.date, a: e.amount||0, k: 'inc'}));
+    (j.expenses||[]).forEach(e => { if(!stockExp[e.id]) F.push({d: e.date, a: -(e.amount||0), k: 'exp'}); });
+  });
+  stock.forEach(it => {
+    (it.moves||[]).forEach(m => { if(m.type === 'sell') F.push({d: m.date, a: (m.qty||0) * (m.price||0), k: 'sell'}); });
+    (it.buys||[]).forEach(b => { if(!b.sup) F.push({d: b.date, a: -(b.qty||0) * (b.cost||0), k: 'buy'}); });
+  });
+  sups.forEach(x => (x.pays||[]).forEach(p => F.push({d: p.date, a: -(p.amount||0), k: 'sup'})));
+  ohEntries().forEach(e => F.push({d: e.date, a: -(e.amount||0), k: 'oh'}));
+  roster.forEach(r => (r.mpays||[]).forEach(p => F.push({d: p.date, a: -(p.amount||0), k: 'mbon'})));
+  return F.filter(f => f.d && f.a);
+}
+const bankDoc = () => overhead.find(o => o.kind === 'bank');
+function bankAnchor(){
+  const b = bankDoc(); if(!b || !(b.hist||[]).length) return null;
+  return b.hist.slice().sort((x,y) => x.date < y.date ? 1 : (x.date > y.date ? -1 : (y.at||0) - (x.at||0)))[0];
+}
+function saveBank(){
+  if(!isAdmin()) return;
+  const raw = (document.getElementById('bkAmt')||{}).value || '';
+  const v = Math.abs(num(raw)), neg = /^\s*[-−]/.test(raw);
+  const dt = (document.getElementById('bkDate')||{}).value || today();
+  if(!(v >= 0)){ alert('Дансны үлдэгдлээ оруулна уу.'); return; }
+  let b = bankDoc();
+  if(!b){ b = {id: uid(), kind: 'bank', desc: 'Дансны үлдэгдэл', hist: [], by: me||'', owner: admin||me}; overhead.push(b); }
+  b.hist = (b.hist||[]).concat([{amt: neg ? -v : v, date: dt, at: Date.now(), by: me||''}]).slice(-30);
+  saveOH(); ui = {}; render();
+}
+function bankForm(B){
+  return '<div class="inf" style="margin-top:10px">'
+    + '<div style="display:flex;gap:10px">'
+    + '<div style="flex:1.3;min-width:0"><label class="fl" for="bkAmt">Банкны бодит үлдэгдэл (₮)</label>'
+    + '<input id="bkAmt" inputmode="numeric" placeholder="0" oninput="liveNum(this)"'
+    + (B ? ' value="'+(B.bal < 0 ? '-' : '')+group(String(Math.abs(Math.round(B.bal))))+'"' : '')+'></div>'
+    + '<div style="flex:1;min-width:0"><label class="fl" for="bkDate">Огноо</label>'
+    + '<input id="bkDate" type="date" value="'+today()+'"></div></div>'
+    + '<div class="rdate" style="margin-top:6px">Банкны апп дахь үлдэгдлээ оруулна. Энэ өдрөөс өмнөх, хойших орлого, '
+    + 'зарлагаар сар бүрийн үлдэгдэл тооцогдоно.</div>'
+    + '<div class="btns"><button class="btn" onclick="saveBank()">Хадгалах</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+}
+// t өдрийн эцсийн үлдэгдэл (шалгасан цэгээс урагш/хойш)
+function balAt(t, a, F){
+  let b = a.amt || 0;
+  F.forEach(f => {
+    if(t >= a.date){ if(f.d > a.date && f.d <= t) b += f.a; }
+    else if(f.d > t && f.d <= a.date) b -= f.a;
+  });
+  return b;
+}
+
 function cumChart(r, y, cur){
   const last = (y === cur) ? parseInt(today().slice(5,7),10) - 1 : 11;
-  const net = [], cum = [];
-  let c = 0;
+  const net = [], cum = [], cash = [];
+  // сар бүрийн мөнгөн урсгал (орсон − гарсан)
+  const cm = {}, td = today(), CF = cashFlows(), A = bankAnchor();
+  CF.forEach(f => { if(f.d.slice(0,4) === String(y) && f.d <= td){ const m = f.d.slice(0,7); cm[m] = (cm[m]||0) + f.a; } });
+  let c = 0, cc = 0;
   for(let i = 0; i <= last; i++){
-    const x = r.mo[y+'-'+String(i+1).padStart(2,'0')];
+    const k = y+'-'+String(i+1).padStart(2,'0');
+    const x = r.mo[k];
     const n = x ? x.job + x.mat - x.oh : 0;
     net.push(n); c += n; cum.push(c);
+    cc += cm[k] || 0;
+    if(A){
+      // сарын эцсийн (энэ сар бол өнөөдрийн) дансны үлдэгдэл
+      const me = (i === last && y === cur) ? td : k+'-'+String(new Date(y, i+1, 0).getDate()).padStart(2,'0');
+      cash.push(balAt(me, A, CF));
+    } else cash.push(cc);
   }
-  if(!Object.keys(r.mo).length) return '';
+  if(!Object.keys(r.mo).length && !Object.keys(cm).length) return '';
   const W = 340, H = 168, L = 34, R = 10, T = 14, B = 22;
-  let hi = Math.max(0, ...cum), lo = Math.min(0, ...cum);
+  let hi = Math.max(0, ...cum, ...cash), lo = Math.min(0, ...cum, ...cash);
   if(hi === lo) hi = lo + 1000000;
   const span = hi - lo;
   const steps = [1e5,2e5,5e5,1e6,2e6,5e6,1e7,2e7,5e7,1e8,2e8,5e8,1e9];
@@ -1374,6 +1441,11 @@ function cumChart(r, y, cur){
   const pts = cum.map((v,i) => xx(i)+','+yy(v)).join(' ');
   s += '<polygon points="'+xx(0)+','+yy(0)+' '+pts+' '+xx(cum.length-1)+','+yy(0)+'" fill="#E3EFE7" opacity=".85"/>'
     + '<polyline points="'+pts+'" fill="none" stroke="#2F6B4F" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  const cpts = cash.map((v,i) => xx(i)+','+yy(v)).join(' ');
+  s += '<polyline points="'+cpts+'" fill="none" stroke="#2A5F7A" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round"/>';
+  cash.forEach((v,i) => {
+    s += '<rect x="'+(xx(i)-2.6)+'" y="'+(yy(v)-2.6)+'" width="5.2" height="5.2" fill="#2A5F7A" stroke="#fff" stroke-width="1"/>';
+  });
   cum.forEach((v,i) => {
     s += '<circle cx="'+xx(i)+'" cy="'+yy(v)+'" r="'+(i === last ? 5 : 3.2)+'" fill="'+(net[i] < 0 ? '#C9412F' : '#2F6B4F')
       + '" stroke="#fff" stroke-width="1.5"/>';
@@ -1383,16 +1455,31 @@ function cumChart(r, y, cur){
       + '" font-weight="'+(i === last ? '700' : '400')+'" text-anchor="middle">'+(i+1)+'</text>';
   }
   s += '</svg>';
-  const tot = cum[cum.length-1];
+  const tot = cum[cum.length-1], ctot = cash[cash.length-1];
+  const bal = A ? balAt(td, A, CF) : null;
   return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
-    + '<span style="font-weight:700;font-size:15px">Оны эхнээс хуримтлагдсан ашиг</span></div>'
-    + '<div style="display:flex;align-items:baseline;gap:8px;margin-top:4px">'
-    + '<span style="font-size:24px;font-weight:700" class="'+(tot<0?'neg':'pos')+'">'+fmt(tot)+'</span>'
-    + '<span class="rdate">'+(last+1)+'-р сар хүртэл · татварын өмнө</span></div>'
+    + '<span style="font-weight:700;font-size:15px">Оны эхнээс хуримтлагдсан</span>'
+    + '<span class="rdate">'+(last+1)+'-р сар хүртэл</span></div>'
+    + '<div style="display:flex;gap:8px 22px;margin-top:6px;flex-wrap:wrap;align-items:flex-start">'
+    + '<div><div class="mlabel">Ашиг · татварын өмнө</div>'
+    + '<div style="font-size:22px;font-weight:700" class="'+(tot<0?'neg':'pos')+'">'+fmt(tot)+'</div></div>'
+    + (A
+        ? '<div><div class="mlabel">Дансны үлдэгдэл</div>'
+          + '<div style="font-size:22px;font-weight:700;color:'+(bal<0?'var(--bad)':'var(--blue)')+'">'+fmt(bal)+'</div>'
+          + '<button class="lnk" style="font-size:12px;padding:0" onclick="ui=ui.bkEdit?{}:{bkEdit:1};render()">'
+          + A.date.slice(5).replace('-', '/')+' шалгасан · засах</button></div>'
+        : '<div><div class="mlabel">Мөнгөн урсгал</div>'
+          + '<div style="font-size:22px;font-weight:700;color:'+(ctot<0?'var(--bad)':'var(--blue)')+'">'+(ctot>0?'+':'')+fmt(ctot)+'</div>'
+          + '<button class="lnk" style="font-size:12px;padding:0" onclick="ui=ui.bkEdit?{}:{bkEdit:1};render()">'
+          + 'дансны үлдэгдэл оруулах</button></div>')
+    + '</div>'
+    + (ui.bkEdit && isAdmin() ? bankForm(A ? {bal: bal} : null) : '')
     + s
-    + '<div style="display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px">'
-    + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2F6B4F;margin-right:5px"></i>ашигтай сар</span>'
-    + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#C9412F;margin-right:5px"></i>алдагдалтай сар</span></div>'
+    + '<div style="display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px">'
+    + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2F6B4F;margin-right:5px"></i>ашиг</span>'
+    + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#C9412F;margin-right:5px"></i>алдагдалтай сар</span>'
+    + '<span><i style="display:inline-block;width:14px;height:0;border-top:2px dashed #2A5F7A;vertical-align:3px;margin-right:5px"></i>'
+    + (A ? 'дансны үлдэгдэл' : 'мөнгөн урсгал (орсон − гарсан)')+'</span></div>'
     + '</div>';
 }
 
