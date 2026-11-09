@@ -3219,9 +3219,14 @@ function rosterView(){
   const nOwed = roster.filter(owes).length;
 
   let h = '<div class="sechd" style="margin-top:4px"><h2 style="font-size:22px">Ажилчид</h2>'
-    + (isAdmin() && !ui.rAdd ? '<button class="btn sm" onclick="ui={rAdd:1};render()">'+IC.plus+'Ажилтан</button>' : '')
+    + (isAdmin() && !ui.rAdd && !ui.tForm
+        ? '<div style="display:flex;gap:6px">'
+          + (roster.length ? '<button class="btn sm ghost" onclick="ui={tForm:1};render()">'+IC.plus+'Баг</button>' : '')
+          + '<button class="btn sm" onclick="ui={rAdd:1};render()">'+IC.plus+'Ажилтан</button></div>'
+        : '')
     + '</div>';
   if(ui.rAdd && isAdmin()) h += wForm('ra', '', 0, 'Нэмэх', 'addRoster()');
+  if(ui.tForm && isAdmin()) h += teamForm(ui.tForm === 1 ? '' : ui.tForm);
 
   if(roster.length > 0){
     h += '<div class="total" style="background:'+(totalDue>0?'#FBE9E6':'#E6F0EA')+'">'
@@ -3235,6 +3240,13 @@ function rosterView(){
   }
   if(roster.length === 0 && !ui.rAdd){
     h += '<div class="empty">Ажилтан бүртгээгүй байна. Нэмсэн ажилтнаа дараа нь аль ч ажилд дуудаж оруулна.</div>';
+  }
+
+  const TK = teamNames();
+  if(TK.length){
+    h += '<div class="secttl" style="margin:16px 2px 8px">Багууд</div>';
+    TK.forEach(tk => { h += teamCard(tk, ST); });
+    h += '<div class="secttl" style="margin:16px 2px 8px">Хүнээр</div>';
   }
 
   const sorted = roster.slice().sort(function(a,b){
@@ -3259,7 +3271,7 @@ function rMini(r){
   return '<button class="rmini" data-q="'+esc((r.name+' '+(r.role||'')).toLowerCase())+'" onclick="ui={rOpen:\''+r.id+'\'};render()">'
     + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
     + '<b style="font-size:15.5px">'+esc(r.name)+'</b>'
-    + (function(){ const x = [r.role ? esc(r.role) : '', isAdmin() ? fmt(r.rate)+'/өдөр' : ''].filter(Boolean).join(' · ');
+    + (function(){ const x = [r.role ? esc(r.role) : '', r.team ? esc(r.team) : '', isAdmin() ? fmt(r.rate)+'/өдөр' : ''].filter(Boolean).join(' · ');
         return x ? '<span style="font-size:12.5px;color:var(--muted)"> · '+x+'</span>' : ''; })()+'</span>'
     + '<span style="color:var(--muted);display:flex;flex:none">'+IC.chev+'</span></button>';
 }
@@ -3275,6 +3287,7 @@ function rCard(r, st){
     + '<div style="min-width:0"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
     + '<span style="font-size:16.5px;font-weight:700">'+esc(r.name)+'</span>'
     + (r.role ? '<span class="tag" style="margin:0;background:#E6ECEF;color:var(--blue)">'+esc(r.role)+'</span>' : '')
+    + (r.team ? '<span class="tag" style="margin:0;background:#EFEAF6;color:#5B4A86">'+esc(r.team)+'</span>' : '')
     + (st.lead ? '<span class="lead" style="margin:0">удирдагч</span>' : '')+'</div>'
     + '<div class="sub" style="margin-top:4px">'+(isAdmin() ? fmt(r.rate)+'/өдөр · ' : '')+st.njobs+' ажил · '+nd(st.days)+' өдөр'
     + (st.bonus > 0 ? ' · урамшуулал '+fmt(st.bonus) : '')
@@ -3490,15 +3503,7 @@ function payRosterWage(rid){
     const a = payAlloc(x);
     if(a.wage > 0){
       any = true;
-      const days = x.w.rate > 0 ? Math.round(a.wage / x.w.rate * 100) / 100 : x.left;
-      const eid = uid();
-      x.j.wagePays = x.j.wagePays || [];
-      x.j.wagePays.push({id: uid(), workerId: x.w.id, days: days, amount: a.wage,
-        date: dt, expenseId: eid});
-      const we = {id: eid, desc: 'Цалин \u2014 '+x.w.name+' ('+nd(days)+' өдөр)',
-        amount: a.wage, date: dt, cat: 'wage', asset: false, receipt: !!ui.rpRcpt, by: me||''};
-      x.j.expenses.push(we);
-      taxRowFor(x.j, we);
+      payWageRow(x, a.wage, dt, ui.rpRcpt, '');
     }
     if(a.bon > 0){
       any = true;
@@ -3513,6 +3518,160 @@ function payRosterWage(rid){
     }
   });
   if(!any){ alert('Олгох дүнг оруулна уу.'); return; }
+  save(); ui = {}; render();
+}
+
+// ---------- баг ----------
+// баг = ажилтны r.team талбар (нэг хүн нэг багт)
+function payWageRow(x, amt, dt, rcpt, sfx){
+  const days = (amt === x.due) ? x.left : (x.w.rate > 0 ? Math.round(amt / x.w.rate * 100) / 100 : x.left);
+  const eid = uid();
+  x.j.wagePays = x.j.wagePays || [];
+  x.j.wagePays.push({id: uid(), workerId: x.w.id, days: days, amount: amt, date: dt, expenseId: eid});
+  const we = {id: eid, desc: 'Цалин \u2014 '+x.w.name+' ('+nd(days)+' өдөр)'+(sfx||''),
+    amount: amt, date: dt, cat: 'wage', asset: false, receipt: !!rcpt, by: me||''};
+  x.j.expenses.push(we);
+  taxRowFor(x.j, we);
+}
+const teamNames = () => roster.map(r => r.team).filter((t,i,a) => t && a.indexOf(t) === i)
+  .sort((a,b) => a.localeCompare(b));
+const teamMembers = tk => roster.filter(r => r.team === tk).sort((a,b) => a.name.localeCompare(b.name));
+
+function teamForm(old){
+  const sel = {};
+  if(old) teamMembers(old).forEach(r => { sel[r.id] = 1; });
+  const list = roster.slice().sort((a,b) => a.name.localeCompare(b.name));
+  let h = '<div class="inf">'
+    + '<div style="font-weight:700;font-size:15px;margin-bottom:8px">'+(old ? 'Баг засах' : 'Шинэ баг')+'</div>'
+    + '<input id="tName" placeholder="Багийн нэр (жишээ: Угсралтын 1-р баг)" value="'+esc(old||'')+'">'
+    + '<div class="fl" style="margin-top:4px">Гишүүд</div>';
+  list.forEach(r => {
+    const other = r.team && r.team !== old;
+    h += '<label class="brow" style="cursor:pointer"><input type="checkbox" data-tm="'+r.id+'"'+(sel[r.id]?' checked':'')
+      + ' style="width:21px;height:21px;accent-color:var(--good);flex:none;margin:0">'
+      + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(r.name)+'</span>'
+      + '<span class="rdate">'+[r.role ? esc(r.role) : '', other ? 'одоо: '+esc(r.team) : ''].filter(Boolean).join(' · ')
+      + '</span></span></label>';
+  });
+  h += '<div class="rdate" style="margin-top:8px">Нэг хүн нэг багт байна. Өөр багт байгаа хүнийг сонговол энэ баг руу шилжинэ.</div>'
+    + '<div class="btns"><button class="btn" onclick="saveTeam()">Хадгалах</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  return h;
+}
+function saveTeam(){
+  if(!isAdmin()) return;
+  const old = ui.tForm === 1 ? '' : ui.tForm;
+  const name = ((document.getElementById('tName')||{}).value || '').trim();
+  if(!name){ alert('Багийн нэрээ оруулна уу.'); return; }
+  const ids = [...document.querySelectorAll('input[data-tm]')].filter(e => e.checked).map(e => e.getAttribute('data-tm'));
+  if(!ids.length){ alert('Дор хаяж нэг гишүүн сонгоно уу.'); return; }
+  roster.forEach(r => {
+    if(ids.indexOf(r.id) >= 0) r.team = name;
+    else if(r.team && (r.team === old || r.team === name)) delete r.team;
+  });
+  saveRoster(); ui = {}; render();
+}
+function dissolveTeam(tk){
+  if(!isAdmin()) return;
+  roster.forEach(r => { if(r.team === tk) delete r.team; });
+  saveRoster(); ui = {}; render();
+}
+function openTPay(tk){
+  const pick = {};
+  teamMembers(tk).forEach(r => { if(rosterJobs(r).some(x => x.due > 0)) pick[r.id] = 1; });
+  ui = {tPay: tk, tPick: pick};
+  render();
+}
+function toggleTPick(rid){
+  ui.tPick = ui.tPick || {};
+  if(ui.tPick[rid]) delete ui.tPick[rid]; else ui.tPick[rid] = 1;
+  render();
+}
+
+function teamCard(tk, ST){
+  const mem = teamMembers(tk);
+  const due = mem.reduce((t,r) => t + ST[r.id].due, 0);
+  const days = mem.reduce((t,r) => t + ST[r.id].open.reduce((s,o)=>s+o.days, 0), 0);
+  const q = JSON.stringify(tk).slice(1, -1).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  let h = '<div class="card" style="padding:14px 16px 16px;margin-bottom:10px;border-left:4px solid #8B7BB8">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+    + '<div style="min-width:0;display:flex;gap:10px;align-items:center">'
+    + '<span style="width:36px;height:36px;border-radius:10px;background:#EFEAF6;color:#5B4A86;display:flex;'
+    + 'align-items:center;justify-content:center;flex:none">'+IC.users+'</span>'
+    + '<div style="min-width:0"><div style="font-size:16.5px;font-weight:700">'+esc(tk)+'</div>'
+    + '<div class="sub" style="margin-top:2px">'+mem.length+' хүн'+(days > 0 ? ' · '+nd(days)+' өдөр олгоогүй' : '')+'</div></div></div>'
+    + (isAdmin() ? '<button class="x" style="margin:-8px -10px 0 0" aria-label="Багийн үйлдэл" '
+        + 'onclick="ui=(ui.tMenu===\''+q+'\')?{}:{tMenu:\''+q+'\'};render()">'+IC.dots+'</button>' : '')
+    + '</div>';
+  if(isAdmin() && ui.tMenu === tk){
+    h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;padding:10px;background:#F2F5F1;border-radius:10px">'
+      + '<button class="small" onclick="ui={tForm:\''+q+'\'};render()">Засах</button>'
+      + '<button class="small warn" onclick="dissolveTeam(\''+q+'\')">Багийг задлах</button></div>';
+  }
+  h += '<div style="margin-top:10px"><div class="mlabel">Багийн олгох цалин</div>'
+    + '<div style="font-size:20px;font-weight:700;margin-top:2px;color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</div></div>'
+    + '<div style="margin-top:8px">';
+  mem.forEach(r => {
+    const d = ST[r.id].due;
+    h += '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-size:14px;border-top:1px solid #EFF2EE">'
+      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)
+      + (r.role ? '<span style="color:var(--muted);font-size:12.5px"> · '+esc(r.role)+'</span>' : '')+'</span>'
+      + '<b style="white-space:nowrap;color:'+(d>0?'var(--ink)':'var(--muted)')+'">'+(d>0 ? fmt(d) : '\u2014')+'</b></div>';
+  });
+  h += '</div>';
+  if(isAdmin() && due > 0 && ui.tPay !== tk){
+    h += '<button class="btn" style="background:var(--good);margin-top:12px;min-height:46px" '
+      + 'onclick="openTPay(\''+q+'\')">Бөөнд олгох · '+fmt(due)+'</button>';
+  }
+  if(ui.tPay === tk) h += teamPayBox(tk);
+  return h + '</div>';
+}
+
+function teamPayBox(tk){
+  const mem = teamMembers(tk).map(r => ({r: r, list: rosterJobs(r).filter(x => x.due > 0)})).filter(m => m.list.length);
+  if(!mem.length) return '<div class="note" style="padding:8px 0 0">Олгох цалин алга.</div>';
+  const q = JSON.stringify(tk).slice(1, -1).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  let tot = 0, n = 0;
+  let h = '<div class="inf" style="margin-top:10px">'
+    + '<div class="rdate" style="margin-bottom:6px">Сонгосон гишүүдийн бүх ажил дээрх олгоогүй цалинг нэг дор олгоно. '
+    + 'Ажил тус бүр дээр цалингийн зардал бүртгэгдэнэ.</div>';
+  mem.forEach(m => {
+    const on = !!(ui.tPick && ui.tPick[m.r.id]);
+    const d = m.list.reduce((t,x)=>t+x.due, 0);
+    if(on){ tot += d; n++; }
+    h += '<label class="brow" style="cursor:pointer"><input type="checkbox"'+(on?' checked':'')
+      + ' style="width:21px;height:21px;accent-color:var(--good);flex:none;margin:0"'
+      + ' onchange="toggleTPick(\''+m.r.id+'\')">'
+      + '<span style="flex:1;min-width:0"><span style="font-size:15px">'+esc(m.r.name)+'</span>'
+      + '<span class="rdate">'+m.list.map(x => esc(x.j.name)+' '+nd(x.left)+' өдөр').join(' · ')+'</span></span>'
+      + '<b style="white-space:nowrap;color:'+(on?'var(--ink)':'var(--muted)')+'">'+fmt(d)+'</b></label>';
+  });
+  const wTax = ui.tpRcpt ? 0 : Math.round(tot * curWtax() / 100);
+  h += '<input id="tpDate" type="date" value="'+today()+'" style="margin-top:10px">'
+    + '<label class="check" style="margin:8px 0 0;min-height:40px"><input type="checkbox"'+(ui.tpRcpt?' checked':'')
+    + ' onchange="ui.tpRcpt=this.checked;render()"><span>Баримттай <span class="rdate" style="display:inline">· баримтгүй бол '
+    + curWtax()+'% татвар ажил дээр зардал болно</span></span></label>'
+    + '<div class="calc" style="margin:8px 0">'
+    + '<div class="ln tot"><span>Нийт олгох · '+n+' хүн</span><b class="pos">'+fmt(tot)+'</b></div>'
+    + (wTax > 0 ? '<div class="ln" style="margin-top:6px"><span>Татвар '+curWtax()+'% (ажил дээр зардал)</span><b class="neg">+'+fmt(wTax)+'</b></div>' : '')
+    + '</div>'
+    + '<div class="btns"><button class="btn"'+(tot > 0 ? '' : ' disabled')+' onclick="payTeam(\''+q+'\')">Олгох</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  return h;
+}
+
+function payTeam(tk){
+  if(!isAdmin()) return;
+  const dt = (document.getElementById('tpDate')||{}).value || today();
+  const mem = teamMembers(tk).filter(r => ui.tPick && ui.tPick[r.id]);
+  let any = false;
+  mem.forEach(r => {
+    rosterJobs(r).filter(x => x.due > 0).forEach(x => {
+      any = true;
+      payWageRow(x, x.due, dt, ui.tpRcpt, ' \u00b7 '+tk);
+    });
+  });
+  if(!any){ alert('Гишүүн сонгоно уу.'); return; }
   save(); ui = {}; render();
 }
 
