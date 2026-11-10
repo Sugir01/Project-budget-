@@ -367,7 +367,7 @@ function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setIt
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
-let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false, cfOpen = false, cfOpenK = false;
+let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false, cfOpen = false;
 let sups = [], supShadow = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
@@ -1297,6 +1297,24 @@ function coProfit(j){
   const c = bonusCalc(j, j.workers||[]);
   return c.totalDays > 0 ? c.gross - Math.max(0, c.pool) : c.gross;
 }
+// ажлын материалын ашиг тооцогдох өдөр: ажил дууссан, гэрээний мөнгө бүрэн орсон (сүүлийнх нь)
+function jobRecDate(j){
+  if(!j || !j.done) return null;
+  const need = j.contract || 0;
+  let got = 0, d = '';
+  (j.incomes||[]).filter(e => e.date).slice().sort((a,b) => a.date < b.date ? -1 : 1)
+    .forEach(e => { if(got < need){ got += e.amount||0; d = e.date; } });
+  if(got < need) return null;
+  const dd = j.doneDate || d || null;
+  return (d && dd && d > dd) ? d : dd;
+}
+// материалын гүйлгээний ашиг тооцогдох өдөр (ажилд гаргасан бол ажлын дагуу; хүлээгдэж байвал null)
+function mvRecDate(mv){
+  if(mv.type !== 'job') return mv.date;
+  const j = jobs.find(x => x.id === mv.jobId);
+  return j ? jobRecDate(j) : mv.date;
+}
+const mvProfitCo = (it, mv) => ((mv.price||0) - mvCost(it, mv)) * (mv.qty||0) - (mv.sbon||0);
 function coYear(y){
   y = String(y);
   const doneY = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) === y);
@@ -1306,9 +1324,10 @@ function coYear(y){
   const add = (d, k, v) => { const m = d.slice(0,7); mo[m] = mo[m] || {job:0, mat:0, oh:0}; mo[m][k] += v; };
   doneY.forEach(j => add(j.doneDate, 'job', coProfit(j)));
   stock.forEach(it => (it.moves||[]).forEach(mv => {
-    if(String(mv.date||'').slice(0,4) !== y) return;
-    const v = ((mv.price||0) - mvCost(it, mv)) * (mv.qty||0) - (mv.sbon||0);
-    matP += v; add(mv.date, 'mat', v);
+    const rd = mvRecDate(mv);
+    if(!rd || String(rd).slice(0,4) !== y) return;
+    const v = mvProfitCo(it, mv);
+    matP += v; add(rd, 'mat', v);
   }));
   const E = ohEntries().filter(e => e.date.slice(0,4) === y);
   const ohT = E.reduce((t,e)=>t+e.amount, 0);
@@ -1370,129 +1389,69 @@ function cashFlows(){
   taxPays().forEach(p => F.push({d: p.date, a: -(p.amount||0), k: 'tax'}));
   return F.filter(f => f.d && f.a);
 }
-const CASHK = [['inc','Ажлын орлого'],['sell','Материал борлуулалт'],['exp','Ажлын зардал, цалин'],
-  ['oh','Байгууллагын зардал'],['sup','Нийлүүлэгчид төлсөн'],['buy','Материал (бэлнээр авсан)'],
-  ['mbon','Борлуулалтын урамшуулал'],['tax','Татвар төлсөн']];
-// оны мөнгөн урсгалын задаргаа (ангиллаар, сараар)
-// идэвхтэй ажилд гаргасан материалын борлуулалтын урамшуулал — ажлын зардалд (бэлэн мөнгөнд) үнээрээ орсон,
-// ашгаас ч хасагдсан тул давхардлыг бэлэн мөнгөний мөрөнд засна
-function sbonActive(y){
+// ---------- мөнгөн урсгал = цэвэр ашиг + бэлэн мөнгө + төлөөгүй татвар ----------
+// t өдрийн байдлаарх идэвхтэй ажлуудын бэлэн мөнгө (орлого − зардал)
+function cashAt(t){
+  let b = 0;
+  jobs.forEach(j => {
+    if(j.done && (!j.doneDate || j.doneDate <= t)) return;
+    b += (j.incomes||[]).filter(e => e.date && e.date <= t).reduce((s,e)=>s+(e.amount||0), 0)
+       - (j.expenses||[]).filter(e => e.date && e.date <= t).reduce((s,e)=>s+(e.amount||0), 0);
+  });
+  return b;
+}
+// t хүртэл ногдсон ажлын татвар (баримтгүйн, цалингийн, НӨАТ) − төлсөн, y оны
+function taxOpenAt(y, t){
   y = String(y);
-  const td = today(), act = {};
-  jobs.forEach(j => { if(!j.done) act[j.id] = 1; });
-  let t = 0;
-  stock.forEach(x => (x.moves||[]).forEach(m => {
-    if(m.type === 'job' && act[m.jobId] && String(m.date||'').slice(0,4) === y && m.date <= td) t += m.sbon||0;
+  let acc = 0, paid = 0;
+  jobs.forEach(j => (j.expenses||[]).forEach(e => {
+    if(e.cat === 'tax' && e.auto && String(e.date||'').slice(0,4) === y && e.date <= t) acc += e.amount||0;
   }));
-  return t;
+  taxPays().forEach(p => { if(String(p.y) === y && p.date <= t) paid += p.amount||0; });
+  return acc - paid;
 }
-// "Бусад зөрүү"-г тайлбарлах хэсгүүд (мөнгө ашгаас их бол +, бага бол −)
-function cashOther(y, oth){
-  y = String(y);
-  const td = today(), inY = d => String(d||'').slice(0,4) === y && d <= td;
-  const stockExp = {};
-  stock.forEach(it => (it.moves||[]).forEach(m => { if(m.type === 'job' && m.expenseId) stockExp[m.expenseId] = 1; }));
-  const cashNet = (j, pick) => (j.incomes||[]).filter(e => pick(e.date)).reduce((t,e)=>t+(e.amount||0), 0)
-    - (j.expenses||[]).filter(e => !stockExp[e.id] && !(e.cat === 'tax' && e.auto) && pick(e.date)).reduce((t,e)=>t+(e.amount||0), 0);
-  const D = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) === y);
-  const A = jobs.filter(j => !j.done);
-  const O = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) !== y);
-  const act = {}; A.forEach(j => { act[j.id] = 1; });
-  const it = {};
-  it.rec = -D.reduce((t,j) => t + (j.contract||0) - earned(j), 0);
-  it.wage = D.reduce((t,j) => t + wageDue(j), 0);
-  it.pool = D.reduce((t,j) => t + (j.contract||0) - spent(j) - wageDue(j) - coProfit(j), 0);
-  it.years = -A.concat(D).reduce((t,j) => t + cashNet(j, d => !inY(d)), 0);
-  it.old = O.reduce((t,j) => t + cashNet(j, inY), 0);
-  let pur = 0, purSup = 0, cogs = 0, sb = 0;
-  stock.forEach(x => {
-    (x.buys||[]).forEach(b => { if(inY(b.date)){ const v = (b.qty||0) * (b.cost||0); pur += v; if(b.sup) purSup += v; } });
-    (x.moves||[]).forEach(m => {
-      if(!inY(m.date)) return;
-      cogs += mvCost(x, m) * (m.qty||0);
-      if(!(m.type === 'job' && act[m.jobId])) sb += m.sbon||0;   // идэвхтэй ажлынх бэлэн мөнгөнд
-    });
-  });
-  const supPaid = sups.reduce((t,x) => t + (x.pays||[]).filter(p => inY(p.date)).reduce((s,p)=>s+(p.amount||0), 0), 0);
-  const mPaid = roster.reduce((t,r) => t + (r.mpays||[]).filter(p => inY(p.date)).reduce((s,p)=>s+(p.amount||0), 0), 0);
-  it.stock = -(pur - cogs);
-  it.pay = purSup - supPaid;
-  it.sbon = sb - mPaid;
-  it.rest = oth - Object.keys(it).reduce((t,k) => t + it[k], 0);
-  return it;
+// t өдрийн агуулахын үлдэгдлийн өртөг ба нийлүүлэгчийн өглөг
+function stockValAt(t){
+  return stock.reduce((s,it) => {
+    const q = (it.qty||0) - (it.buys||[]).filter(b => b.date && b.date > t).reduce((u,b)=>u+(b.qty||0), 0)
+      - (it.moves||[]).filter(m => m.date && m.date <= t).reduce((u,m)=>u+(m.qty||0), 0);
+    return s + Math.max(0, q) * (it.cost||0);
+  }, 0);
 }
-const OTHK = [['rec','Дууссан ажлын авлага','гэрээний дүнгээс авч амжаагүй'],
-  ['wage','Олгоогүй цалин','дууссан ажлууд дээр'],
-  ['pool','Олгоогүй удирдагчийн урамшуулал','дууссан ажлууд дээр'],
-  ['stock','Агуулахад нэмэгдсэн материал','энэ онд авсан − зарсан, ажилд гаргасан өртөг'],
-  ['pay','Нийлүүлэгчийн өглөг','энэ онд зээлээр авсан − төлсөн'],
-  ['sbon','Олгоогүй борлуулалтын урамшуулал','шууд зарсан, дууссан ажилд гаргасан материалын'],
-  ['years','Энэ ажлуудын өөр онд орсон, гарсан','өмнөх онд авсан урьдчилгаа г.м.'],
-  ['old','Өмнөх онд дууссан ажлын энэ оны гүйлгээ','хожим авсан төлбөр, хожим олгосон цалин'],
-  ['rest','Тайлбаргүй үлдэгдэл','татварын төлөлтийн огноо, өөр он руу шилжсэн бичилт г.м.']];
-// мөнгөн урсгалыг цэвэр ашиг + бэлэн мөнгө + төлөөгүй татвар + бусад зөрүүгээр задлах
-function cashBreak(y, last, A, CF, r){
-  const td = today(), by = {}, mo = {};
-  let inn = 0, out = 0;
-  CF.forEach(f => {
-    if(f.d.slice(0,4) !== String(y) || f.d > td) return;
-    by[f.k] = (by[f.k]||0) + f.a;
-    const m = parseInt(f.d.slice(5,7),10);
-    const x = mo[m] = mo[m] || {i: 0, o: 0};
-    if(f.a > 0){ inn += f.a; x.i += f.a; } else { out -= f.a; x.o -= f.a; }
-  });
-  const cf = inn - out;
+function supOweAt(t){
+  return sups.reduce((s,x) => {
+    const b = stock.reduce((u,it) => u + (it.buys||[]).filter(v => v.sup === x.id && v.date && v.date <= t)
+      .reduce((w,v)=>w+(v.qty||0)*(v.cost||0), 0), 0);
+    const p = (x.pays||[]).filter(v => v.date && v.date <= t).reduce((w,v)=>w+(v.amount||0), 0);
+    return s + Math.max(0, b - p);
+  }, 0);
+}
+function cfParts(y, r){
+  const cur = today().slice(0,4) === String(y);
   r = r || coYear(y);
-  const prof = r.after;
-  const sbA = sbonActive(y);
-  const cash = jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j), 0) + sbA;
-  const D = taxDue(y), unp = D.accT - D.paidT;
-  const oth = cf - prof - cash - unp;
+  const D = taxDue(y);
+  const cash = cur ? jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j), 0) : cashAt(y+'-12-31');
+  const unp = D.accT - D.paidT;
+  const sv = cur ? stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0) : stockValAt(y+'-12-31');
+  const so = cur ? supOweAll() : supOweAt(y+'-12-31');
+  const stk = -(sv - so);
+  return {prof: r.after, cash: cash, unp: unp, acc: D.accT, paid: D.paidT, sv: sv, so: so, stk: stk,
+          total: r.after + cash + unp + stk};
+}
+function cashBreak(y, r){
+  const p = cfParts(y, r);
   const sg = v => (v > 0 ? '+' : (v < 0 ? '−' : ''))+fmt(Math.abs(v));
   const ln = (l, sub, v, cls) => '<div class="ln"><span>'+l
     + (sub ? '<span class="rdate" style="display:block;margin-top:1px">'+sub+'</span>' : '')+'</span>'
     + '<b style="white-space:nowrap"'+(cls ? ' class="'+cls+'"' : '')+'>'+v+'</b></div>';
-  let h = '<div class="calc" style="margin:10px 0 0">'
-    + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(prof), prof < 0 ? 'neg' : 'pos')
-    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал'
-        + (sbA ? ' · материалын урамшуулал +'+fmt(sbA)+' (ашгаас хасагдсан)' : ''),
-        sg(cash), cash < 0 ? 'neg' : '')
-    + ln('Төлөөгүй татвар', 'ногдсон '+fmt(D.accT)+' − төлсөн '+fmt(D.paidT), sg(unp))
-    + ln('Бусад зөрүү', '', sg(oth))
-    + (function(){
-        const it = cashOther(y, oth);
-        return OTHK.filter(k => Math.abs(it[k[0]]) >= 1).map(k =>
-          '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0 3px 12px;'
-          + 'border-left:2px solid #DCE3DD;margin:2px 0 2px 2px;font-size:13px">'
-          + '<span style="min-width:0">'+k[1]+(k[2] ? '<span class="rdate" style="display:block">'+k[2]+'</span>' : '')+'</span>'
-          + '<b style="white-space:nowrap;font-weight:600;color:'+(it[k[0]] < 0 ? 'var(--bad)' : 'var(--good)')+'">'
-          + sg(it[k[0]])+'</b></div>').join('');
-      })()
-    + '<div class="ln tot"><span>Мөнгөн урсгал · '+y+'</span><b class="'+(cf < 0 ? 'neg' : 'pos')+'">'+sg(cf)+'</b></div>';
-  if(A){
-    const end = String(y) === td.slice(0,4) ? td : y+'-12-31';
-    h += ln('Оны эхний үлдэгдэл (1/1)', '', fmt(balAt((y-1)+'-12-31', A, CF)))
-      + ln(String(y) === td.slice(0,4) ? 'Одоогийн үлдэгдэл' : 'Оны эцсийн үлдэгдэл', '', fmt(balAt(end, A, CF)), 'pos');
-  }
-  h += '</div>'
-    + '<button class="lnk" style="margin-top:8px;padding:0" onclick="cfOpenK=!cfOpenK;render()">Орсон, гарсан · сараар '
-    + (cfOpenK ? '⌃' : '›')+'</button>';
-  if(!cfOpenK) return h;
-  h += '<div class="calc" style="margin:8px 0 0">'
-    + '<div class="rdate" style="margin:0 0 2px;font-weight:600">Орсон</div>';
-  CASHK.filter(k => (by[k[0]]||0) > 0).forEach(k => { h += ln(k[1], '', '+'+fmt(by[k[0]]), 'pos'); });
-  h += '<div class="rdate" style="margin:8px 0 2px;font-weight:600">Гарсан</div>';
-  CASHK.filter(k => (by[k[0]]||0) < 0).forEach(k => { h += ln(k[1], '', '−'+fmt(-by[k[0]])); });
-  h += '<div class="ln tot"><span>Орсон − гарсан</span><b class="'+(cf < 0 ? 'neg' : 'pos')+'">'+sg(cf)+'</b></div>'
-    + '</div><div class="rdate" style="margin:10px 0 4px;font-weight:600">Сараар</div>';
-  for(let i = last + 1; i >= 1; i--){
-    const x = mo[i]; if(!x) continue;
-    h += '<div style="padding:6px 0;border-top:1px solid #EFF2EE">'
-      + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>'+i+'-р сар</span>'
-      + '<b style="white-space:nowrap;color:'+(x.i-x.o<0?'var(--bad)':'var(--good)')+'">'+sg(x.i - x.o)+'</b></div>'
-      + '<div class="rdate">орсон +'+fmt(x.i)+' · гарсан −'+fmt(x.o)+'</div></div>';
-  }
-  return h;
+  return '<div class="calc" style="margin:10px 0 0">'
+    + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(p.prof), p.prof < 0 ? 'neg' : 'pos')
+    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал', sg(p.cash), p.cash < 0 ? 'neg' : '')
+    + ln('Төлөөгүй татвар', 'ногдсон '+fmt(p.acc)+' − төлсөн '+fmt(p.paid), sg(p.unp))
+    + ((p.sv || p.so) ? ln('Агуулахад байгаа материал', 'үлдэгдлийн өртөг '+fmt(p.sv)
+        + (p.so ? ' − нийлүүлэгчийн өглөг '+fmt(p.so) : ''), sg(p.stk), p.stk < 0 ? 'neg' : '') : '')
+    + '<div class="ln tot"><span>Мөнгөн урсгал · '+y+'</span><b class="'+(p.total < 0 ? 'neg' : 'pos')+'">'+sg(p.total)+'</b></div>'
+    + '</div>';
 }
 const bankDoc = () => overhead.find(o => o.kind === 'bank');
 // татварын албанд төлсөн төлбөрүүд (байгууллагын зардлын цуглуулгад нэг баримт)
@@ -1624,23 +1583,22 @@ function balAt(t, a, F){
 function cumChart(r, y, cur){
   const last = (y === cur) ? parseInt(today().slice(5,7),10) - 1 : 11;
   const net = [], cum = [], cash = [];
-  // сар бүрийн мөнгөн урсгал (орсон − гарсан)
-  const cm = {}, td = today(), CF = cashFlows(), A = bankAnchor();
-  CF.forEach(f => { if(f.d.slice(0,4) === String(y) && f.d <= td){ const m = f.d.slice(0,7); cm[m] = (cm[m]||0) + f.a; } });
-  let c = 0, cc = 0;
+  const td = today(), A = bankAnchor(), CF = A ? cashFlows() : [];
+  const CP = cfParts(y, r);
+  let c = 0;
   for(let i = 0; i <= last; i++){
     const k = y+'-'+String(i+1).padStart(2,'0');
     const x = r.mo[k];
     const n = x ? x.job + x.mat - x.oh : 0;
     net.push(n); c += n; cum.push(c);
-    cc += cm[k] || 0;
-    if(A){
-      // сарын эцсийн (энэ сар бол өнөөдрийн) дансны үлдэгдэл
-      const me = (i === last && y === cur) ? td : k+'-'+String(new Date(y, i+1, 0).getDate()).padStart(2,'0');
-      cash.push(balAt(me, A, CF));
-    } else cash.push(cc);
+    // сарын эцсийн (энэ сар бол өнөөдрийн) өдөр
+    const me = (i === last && y === cur) ? td : k+'-'+String(new Date(y, i+1, 0).getDate()).padStart(2,'0');
+    if(A) cash.push(balAt(me, A, CF));
+    else if(i === last) cash.push(CP.total);
+    // ашиг (татварын өмнө, ААНОАТ төлөөгүй татвартай хамт хасагдаж нэмэгдэх тул) + бэлэн мөнгө + төлөөгүй ажлын татвар
+    else cash.push(c + cashAt(me) + taxOpenAt(y, me) - stockValAt(me) + supOweAt(me));
   }
-  if(!Object.keys(r.mo).length && !Object.keys(cm).length) return '';
+  if(!Object.keys(r.mo).length && !cash.some(v => v)) return '';
   const W = 340, H = 168, L = 34, R = 10, T = 14, B = 22;
   let hi = Math.max(0, ...cum, ...cash), lo = Math.min(0, ...cum, ...cash);
   if(hi === lo) hi = lo + 1000000;
@@ -1673,7 +1631,7 @@ function cumChart(r, y, cur){
       + '" font-weight="'+(i === last ? '700' : '400')+'" text-anchor="middle">'+(i+1)+'</text>';
   }
   s += '</svg>';
-  const tot = cum[cum.length-1], ctot = cash[cash.length-1];
+  const tot = cum[cum.length-1], ctot = A ? cash[cash.length-1] : CP.total;
   const bal = A ? balAt(td, A, CF) : null;
   return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
     + '<span style="font-weight:700;font-size:15px">Оны эхнээс хуримтлагдсан</span>'
@@ -1694,13 +1652,13 @@ function cumChart(r, y, cur){
           + 'дансны үлдэгдэл оруулах</button></div>')
     + '</div>'
     + (ui.bkEdit && isAdmin() ? bankForm(A ? {bal: bal} : null) : '')
-    + (cfOpen ? cashBreak(y, last, A, CF, r) : '')
+    + (cfOpen ? cashBreak(y, r) : '')
     + s
     + '<div style="display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px">'
     + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2F6B4F;margin-right:5px"></i>ашиг</span>'
     + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#C9412F;margin-right:5px"></i>алдагдалтай сар</span>'
     + '<span><i style="display:inline-block;width:14px;height:0;border-top:2px dashed #2A5F7A;vertical-align:3px;margin-right:5px"></i>'
-    + (A ? 'дансны үлдэгдэл' : 'мөнгөн урсгал (орсон − гарсан)')+'</span></div>'
+    + (A ? 'дансны үлдэгдэл' : 'мөнгөн урсгал')+'</span></div>'
     + '</div>';
 }
 
@@ -3096,6 +3054,8 @@ function saveMatPct(){
 function stockView(){
   const left = stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0);
   const prof = stock.reduce((t,x)=>t+stockProfit(x)-stockSBon(x), 0);
+  // ажил дуусаж мөнгө нь ороогүй ажилд гаргасан материалын ашиг — компанийн ашигт хараахан ороогүй
+  const pend = stock.reduce((t,x)=>t+(x.moves||[]).filter(m => !mvRecDate(m)).reduce((u,m)=>u+mvProfitCo(x, m), 0), 0);
   const sbAll = stock.reduce((t,x)=>t+stockSBon(x), 0);
   const sold = stock.reduce((t,x)=>t+stockSold(x), 0);
 
@@ -3121,7 +3081,9 @@ function stockView(){
     + '<div class="pair"><div class="plabel">Үлдэгдлийн өртөг</div>'
     + '<div class="pval" style="color:#8FD3AE">'+fmt(left)+'</div></div>'
     + '<div class="pair"><div class="plabel">Материалын ашиг'+(sbAll > 0 ? ' (компанид)' : '')+'</div>'
-    + '<div class="pval '+(prof<0?'neg':'pos')+'">'+fmt(prof)+'</div></div></div>'
+    + '<div class="pval '+(prof<0?'neg':'pos')+'">'+fmt(prof)+'</div>'
+    + (pend ? '<div style="font-size:11.5px;opacity:.75;margin-top:3px">үүнээс '+fmt(pend)+' ажлын мөнгө орохыг хүлээж буй</div>' : '')
+    + '</div></div>'
     + '<div class="meta"><div><div class="mlabel">Нэр төрөл</div><div class="mval">'+stock.length+'</div></div>'
     + '<div><div class="mlabel">Гарсан дүн</div><div class="mval">'+fmt(sold)+'</div></div>'
     + (sbAll > 0 ? '<div><div class="mlabel">Борлуулагчид</div><div class="mval">'+fmt(sbAll)+'</div></div>' : '')
