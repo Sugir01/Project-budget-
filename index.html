@@ -1410,21 +1410,17 @@ function taxOpenAt(y, t){
   taxPays().forEach(p => { if(String(p.y) === y && p.date <= t) paid += p.amount||0; });
   return acc - paid;
 }
-// t өдрийн агуулахын үлдэгдлийн өртөг ба нийлүүлэгчийн өглөг
-function stockValAt(t){
-  return stock.reduce((s,it) => {
-    const q = (it.qty||0) - (it.buys||[]).filter(b => b.date && b.date > t).reduce((u,b)=>u+(b.qty||0), 0)
-      - (it.moves||[]).filter(m => m.date && m.date <= t).reduce((u,m)=>u+(m.qty||0), 0);
-    return s + Math.max(0, q) * (it.cost||0);
-  }, 0);
-}
-function supOweAt(t){
-  return sups.reduce((s,x) => {
-    const b = stock.reduce((u,it) => u + (it.buys||[]).filter(v => v.sup === x.id && v.date && v.date <= t)
-      .reduce((w,v)=>w+(v.qty||0)*(v.cost||0), 0), 0);
-    const p = (x.pays||[]).filter(v => v.date && v.date <= t).reduce((w,v)=>w+(v.amount||0), 0);
-    return s + Math.max(0, b - p);
-  }, 0);
+// y оны t хүртэл материалд төлсөн мөнгө (бэлнээр авсан + нийлүүлэгчид төлсөн) ба зарсан, ажилд гаргасан өртөг
+function matCashAt(y, t){
+  y = String(y);
+  const inY = d => String(d||'').slice(0,4) === y && d <= t;
+  let paid = 0, cogs = 0;
+  stock.forEach(it => {
+    (it.buys||[]).forEach(b => { if(!b.sup && inY(b.date)) paid += (b.qty||0) * (b.cost||0); });
+    (it.moves||[]).forEach(m => { if(inY(m.date)) cogs += mvCost(it, m) * (m.qty||0); });
+  });
+  sups.forEach(x => (x.pays||[]).forEach(p => { if(inY(p.date)) paid += p.amount||0; }));
+  return {paid: paid, cogs: cogs};
 }
 function cfParts(y, r){
   const cur = today().slice(0,4) === String(y);
@@ -1432,11 +1428,9 @@ function cfParts(y, r){
   const D = taxDue(y);
   const cash = cur ? jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j), 0) : cashAt(y+'-12-31');
   const unp = D.accT - D.paidT;
-  const sv = cur ? stock.reduce((t,x)=>t+stockLeft(x)*(x.cost||0), 0) : stockValAt(y+'-12-31');
-  const so = cur ? supOweAll() : supOweAt(y+'-12-31');
-  const stk = -(sv - so);
-  return {prof: r.after, cash: cash, unp: unp, acc: D.accT, paid: D.paidT, sv: sv, so: so, stk: stk,
-          total: r.after + cash + unp + stk};
+  const M = matCashAt(y, cur ? today() : y+'-12-31');
+  return {prof: r.after, cash: cash, unp: unp, acc: D.accT, paid: D.paidT, mPaid: M.paid, mCogs: M.cogs,
+          total: r.after + cash + unp - M.paid + M.cogs};
 }
 function cashBreak(y, r){
   const p = cfParts(y, r);
@@ -1448,8 +1442,8 @@ function cashBreak(y, r){
     + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(p.prof), p.prof < 0 ? 'neg' : 'pos')
     + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал', sg(p.cash), p.cash < 0 ? 'neg' : '')
     + ln('Төлөөгүй татвар', 'ногдсон '+fmt(p.acc)+' − төлсөн '+fmt(p.paid), sg(p.unp))
-    + ((p.sv || p.so) ? ln('Агуулахад байгаа материал', 'үлдэгдлийн өртөг '+fmt(p.sv)
-        + (p.so ? ' − нийлүүлэгчийн өглөг '+fmt(p.so) : ''), sg(p.stk), p.stk < 0 ? 'neg' : '') : '')
+    + (p.mPaid ? ln('Материал худалдан авалт', y+' онд бэлнээр авсан, нийлүүлэгчид төлсөн', sg(-p.mPaid), 'neg') : '')
+    + (p.mCogs ? ln('Зарсан, ажилд гаргасан материалын өртөг', 'ашиг, ажлын зардалд хасагдсан тул буцааж нэмнэ', sg(p.mCogs)) : '')
     + '<div class="ln tot"><span>Мөнгөн урсгал · '+y+'</span><b class="'+(p.total < 0 ? 'neg' : 'pos')+'">'+sg(p.total)+'</b></div>'
     + '</div>';
 }
@@ -1596,7 +1590,7 @@ function cumChart(r, y, cur){
     if(A) cash.push(balAt(me, A, CF));
     else if(i === last) cash.push(CP.total);
     // ашиг (татварын өмнө, ААНОАТ төлөөгүй татвартай хамт хасагдаж нэмэгдэх тул) + бэлэн мөнгө + төлөөгүй ажлын татвар
-    else cash.push(c + cashAt(me) + taxOpenAt(y, me) - stockValAt(me) + supOweAt(me));
+    else { const M = matCashAt(y, me); cash.push(c + cashAt(me) + taxOpenAt(y, me) - M.paid + M.cogs); }
   }
   if(!Object.keys(r.mo).length && !cash.some(v => v)) return '';
   const W = 340, H = 168, L = 34, R = 10, T = 14, B = 22;
