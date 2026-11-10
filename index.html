@@ -1390,13 +1390,21 @@ function cashFlows(){
   return F.filter(f => f.d && f.a);
 }
 // ---------- мөнгөн урсгал = цэвэр ашиг + бэлэн мөнгө + төлөөгүй татвар ----------
-// t өдрийн байдлаарх идэвхтэй ажлуудын бэлэн мөнгө (орлого − зардал)
-function cashAt(t){
+// агуулахаас ажилд гаргасан материалын зардлын мөрүүд — мөнгө хөдөлдөггүй (мөнгө нь худалдан авахад гарсан)
+function stockExpIds(){
+  const o = {};
+  stock.forEach(it => (it.moves||[]).forEach(m => { if(m.type === 'job' && m.expenseId) o[m.expenseId] = 1; }));
+  return o;
+}
+const jobActiveAt = (j, t) => !(j.done && (!j.doneDate || j.doneDate <= t));
+// t өдрийн байдлаарх идэвхтэй ажлуудын бэлэн мөнгө (орлого − зардал, агуулахын материалгүй)
+function cashAt(t, SX){
+  SX = SX || stockExpIds();
   let b = 0;
   jobs.forEach(j => {
-    if(j.done && (!j.doneDate || j.doneDate <= t)) return;
+    if(!jobActiveAt(j, t)) return;
     b += (j.incomes||[]).filter(e => e.date && e.date <= t).reduce((s,e)=>s+(e.amount||0), 0)
-       - (j.expenses||[]).filter(e => e.date && e.date <= t).reduce((s,e)=>s+(e.amount||0), 0);
+       - (j.expenses||[]).filter(e => e.date && e.date <= t && !SX[e.id]).reduce((s,e)=>s+(e.amount||0), 0);
   });
   return b;
 }
@@ -1410,14 +1418,19 @@ function taxOpenAt(y, t){
   taxPays().forEach(p => { if(String(p.y) === y && p.date <= t) paid += p.amount||0; });
   return acc - paid;
 }
-// y оны t хүртэл материалд төлсөн мөнгө (бэлнээр авсан + нийлүүлэгчид төлсөн) ба зарсан, ажилд гаргасан өртөг
+// y оны t хүртэл материалд төлсөн мөнгө (бэлнээр авсан + нийлүүлэгчид төлсөн) ба
+// зарсан, дууссан ажилд гаргасан материалын өртөг (идэвхтэй ажилд гаргасныг бэлэн мөнгөнд хасаагүй тул тооцохгүй)
 function matCashAt(y, t){
   y = String(y);
   const inY = d => String(d||'').slice(0,4) === y && d <= t;
   let paid = 0, cogs = 0;
   stock.forEach(it => {
     (it.buys||[]).forEach(b => { if(!b.sup && inY(b.date)) paid += (b.qty||0) * (b.cost||0); });
-    (it.moves||[]).forEach(m => { if(inY(m.date)) cogs += mvCost(it, m) * (m.qty||0); });
+    (it.moves||[]).forEach(m => {
+      if(!inY(m.date)) return;
+      if(m.type === 'job'){ const j = jobs.find(x => x.id === m.jobId); if(j && jobActiveAt(j, t)) return; }
+      cogs += mvCost(it, m) * (m.qty||0);
+    });
   });
   sups.forEach(x => (x.pays||[]).forEach(p => { if(inY(p.date)) paid += p.amount||0; }));
   return {paid: paid, cogs: cogs};
@@ -1426,7 +1439,10 @@ function cfParts(y, r){
   const cur = today().slice(0,4) === String(y);
   r = r || coYear(y);
   const D = taxDue(y);
-  const cash = cur ? jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j), 0) : cashAt(y+'-12-31');
+  const SX = stockExpIds();
+  const cash = cur ? jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j)
+      + (j.expenses||[]).filter(e => SX[e.id]).reduce((u,e)=>u+(e.amount||0), 0), 0)
+    : cashAt(y+'-12-31', SX);
   const unp = D.accT - D.paidT;
   const M = matCashAt(y, cur ? today() : y+'-12-31');
   return {prof: r.after, cash: cash, unp: unp, acc: D.accT, paid: D.paidT, mPaid: M.paid, mCogs: M.cogs,
@@ -1440,10 +1456,10 @@ function cashBreak(y, r){
     + '<b style="white-space:nowrap"'+(cls ? ' class="'+cls+'"' : '')+'>'+v+'</b></div>';
   return '<div class="calc" style="margin:10px 0 0">'
     + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(p.prof), p.prof < 0 ? 'neg' : 'pos')
-    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал', sg(p.cash), p.cash < 0 ? 'neg' : '')
+    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал · агуулахаас гаргасан материалгүй', sg(p.cash), p.cash < 0 ? 'neg' : '')
     + ln('Төлөөгүй татвар', 'ногдсон '+fmt(p.acc)+' − төлсөн '+fmt(p.paid), sg(p.unp))
     + (p.mPaid ? ln('Материал худалдан авалт', y+' онд бэлнээр авсан, нийлүүлэгчид төлсөн', sg(-p.mPaid), 'neg') : '')
-    + (p.mCogs ? ln('Зарсан, ажилд гаргасан материалын өртөг', 'ашиг, ажлын зардалд хасагдсан тул буцааж нэмнэ', sg(p.mCogs)) : '')
+    + (p.mCogs ? ln('Зарсан, дууссан ажилд гаргасан материалын өртөг', 'ашигт хасагдсан тул буцааж нэмнэ', sg(p.mCogs)) : '')
     + '<div class="ln tot"><span>Мөнгөн урсгал · '+y+'</span><b class="'+(p.total < 0 ? 'neg' : 'pos')+'">'+sg(p.total)+'</b></div>'
     + '</div>';
 }
