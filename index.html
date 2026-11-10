@@ -1374,6 +1374,45 @@ const CASHK = [['inc','Ажлын орлого'],['sell','Материал бо�
   ['oh','Байгууллагын зардал'],['sup','Нийлүүлэгчид төлсөн'],['buy','Материал (бэлнээр авсан)'],
   ['mbon','Борлуулалтын урамшуулал'],['tax','Татвар төлсөн']];
 // оны мөнгөн урсгалын задаргаа (ангиллаар, сараар)
+// "Бусад зөрүү"-г тайлбарлах хэсгүүд (мөнгө ашгаас их бол +, бага бол −)
+function cashOther(y, oth){
+  y = String(y);
+  const td = today(), inY = d => String(d||'').slice(0,4) === y && d <= td;
+  const stockExp = {};
+  stock.forEach(it => (it.moves||[]).forEach(m => { if(m.type === 'job' && m.expenseId) stockExp[m.expenseId] = 1; }));
+  const cashNet = (j, pick) => (j.incomes||[]).filter(e => pick(e.date)).reduce((t,e)=>t+(e.amount||0), 0)
+    - (j.expenses||[]).filter(e => !stockExp[e.id] && !(e.cat === 'tax' && e.auto) && pick(e.date)).reduce((t,e)=>t+(e.amount||0), 0);
+  const D = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) === y);
+  const A = jobs.filter(j => !j.done);
+  const O = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) !== y);
+  const it = {};
+  it.rec = -D.reduce((t,j) => t + (j.contract||0) - earned(j), 0);
+  it.wage = D.reduce((t,j) => t + wageDue(j), 0);
+  it.pool = D.reduce((t,j) => t + (j.contract||0) - spent(j) - wageDue(j) - coProfit(j), 0);
+  it.years = -A.concat(D).reduce((t,j) => t + cashNet(j, d => !inY(d)), 0);
+  it.old = O.reduce((t,j) => t + cashNet(j, inY), 0);
+  let pur = 0, purSup = 0, cogs = 0, sb = 0;
+  stock.forEach(x => {
+    (x.buys||[]).forEach(b => { if(inY(b.date)){ const v = (b.qty||0) * (b.cost||0); pur += v; if(b.sup) purSup += v; } });
+    (x.moves||[]).forEach(m => { if(inY(m.date)){ cogs += mvCost(x, m) * (m.qty||0); sb += m.sbon||0; } });
+  });
+  const supPaid = sups.reduce((t,x) => t + (x.pays||[]).filter(p => inY(p.date)).reduce((s,p)=>s+(p.amount||0), 0), 0);
+  const mPaid = roster.reduce((t,r) => t + (r.mpays||[]).filter(p => inY(p.date)).reduce((s,p)=>s+(p.amount||0), 0), 0);
+  it.stock = -(pur - cogs);
+  it.pay = purSup - supPaid;
+  it.sbon = sb - mPaid;
+  it.rest = oth - Object.keys(it).reduce((t,k) => t + it[k], 0);
+  return it;
+}
+const OTHK = [['rec','Дууссан ажлын авлага','гэрээний дүнгээс авч амжаагүй'],
+  ['wage','Олгоогүй цалин','дууссан ажлууд дээр'],
+  ['pool','Олгоогүй удирдагчийн урамшуулал','дууссан ажлууд дээр'],
+  ['stock','Агуулахад нэмэгдсэн материал','энэ онд авсан − зарсан, ажилд гаргасан өртөг'],
+  ['pay','Нийлүүлэгчийн өглөг','энэ онд зээлээр авсан − төлсөн'],
+  ['sbon','Олгоогүй борлуулалтын урамшуулал',''],
+  ['years','Энэ ажлуудын өөр онд орсон, гарсан','өмнөх онд авсан урьдчилгаа г.м.'],
+  ['old','Өмнөх онд дууссан ажлын энэ оны гүйлгээ','хожим авсан төлбөр, хожим олгосон цалин'],
+  ['rest','Тайлбаргүй үлдэгдэл','татварын төлөлтийн огноо, өөр он руу шилжсэн бичилт г.м.']];
 // мөнгөн урсгалыг цэвэр ашиг + бэлэн мөнгө + төлөөгүй татвар + бусад зөрүүгээр задлах
 function cashBreak(y, last, A, CF, r){
   const td = today(), by = {}, mo = {};
@@ -1399,7 +1438,16 @@ function cashBreak(y, last, A, CF, r){
     + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(prof), prof < 0 ? 'neg' : 'pos')
     + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал', sg(cash), cash < 0 ? 'neg' : '')
     + ln('Төлөөгүй татвар', 'ногдсон '+fmt(D.accT)+' − төлсөн '+fmt(D.paidT), sg(unp))
-    + ln('Бусад зөрүү', 'авлага, олгоогүй цалин, агуулахын материал, өглөг, өмнөх оны гүйлгээ', sg(oth))
+    + ln('Бусад зөрүү', '', sg(oth))
+    + (function(){
+        const it = cashOther(y, oth);
+        return OTHK.filter(k => Math.abs(it[k[0]]) >= 1).map(k =>
+          '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0 3px 12px;'
+          + 'border-left:2px solid #DCE3DD;margin:2px 0 2px 2px;font-size:13px">'
+          + '<span style="min-width:0">'+k[1]+(k[2] ? '<span class="rdate" style="display:block">'+k[2]+'</span>' : '')+'</span>'
+          + '<b style="white-space:nowrap;font-weight:600;color:'+(it[k[0]] < 0 ? 'var(--bad)' : 'var(--good)')+'">'
+          + sg(it[k[0]])+'</b></div>').join('');
+      })()
     + '<div class="ln tot"><span>Мөнгөн урсгал · '+y+'</span><b class="'+(cf < 0 ? 'neg' : 'pos')+'">'+sg(cf)+'</b></div>';
   if(A){
     const end = String(y) === td.slice(0,4) ? td : y+'-12-31';
