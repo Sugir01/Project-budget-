@@ -1374,6 +1374,18 @@ const CASHK = [['inc','Ажлын орлого'],['sell','Материал бо�
   ['oh','Байгууллагын зардал'],['sup','Нийлүүлэгчид төлсөн'],['buy','Материал (бэлнээр авсан)'],
   ['mbon','Борлуулалтын урамшуулал'],['tax','Татвар төлсөн']];
 // оны мөнгөн урсгалын задаргаа (ангиллаар, сараар)
+// идэвхтэй ажилд гаргасан материалын борлуулалтын урамшуулал — ажлын зардалд (бэлэн мөнгөнд) үнээрээ орсон,
+// ашгаас ч хасагдсан тул давхардлыг бэлэн мөнгөний мөрөнд засна
+function sbonActive(y){
+  y = String(y);
+  const td = today(), act = {};
+  jobs.forEach(j => { if(!j.done) act[j.id] = 1; });
+  let t = 0;
+  stock.forEach(x => (x.moves||[]).forEach(m => {
+    if(m.type === 'job' && act[m.jobId] && String(m.date||'').slice(0,4) === y && m.date <= td) t += m.sbon||0;
+  }));
+  return t;
+}
 // "Бусад зөрүү"-г тайлбарлах хэсгүүд (мөнгө ашгаас их бол +, бага бол −)
 function cashOther(y, oth){
   y = String(y);
@@ -1385,6 +1397,7 @@ function cashOther(y, oth){
   const D = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) === y);
   const A = jobs.filter(j => !j.done);
   const O = jobs.filter(j => j.done && String(j.doneDate||'').slice(0,4) !== y);
+  const act = {}; A.forEach(j => { act[j.id] = 1; });
   const it = {};
   it.rec = -D.reduce((t,j) => t + (j.contract||0) - earned(j), 0);
   it.wage = D.reduce((t,j) => t + wageDue(j), 0);
@@ -1394,7 +1407,11 @@ function cashOther(y, oth){
   let pur = 0, purSup = 0, cogs = 0, sb = 0;
   stock.forEach(x => {
     (x.buys||[]).forEach(b => { if(inY(b.date)){ const v = (b.qty||0) * (b.cost||0); pur += v; if(b.sup) purSup += v; } });
-    (x.moves||[]).forEach(m => { if(inY(m.date)){ cogs += mvCost(x, m) * (m.qty||0); sb += m.sbon||0; } });
+    (x.moves||[]).forEach(m => {
+      if(!inY(m.date)) return;
+      cogs += mvCost(x, m) * (m.qty||0);
+      if(!(m.type === 'job' && act[m.jobId])) sb += m.sbon||0;   // идэвхтэй ажлынх бэлэн мөнгөнд
+    });
   });
   const supPaid = sups.reduce((t,x) => t + (x.pays||[]).filter(p => inY(p.date)).reduce((s,p)=>s+(p.amount||0), 0), 0);
   const mPaid = roster.reduce((t,r) => t + (r.mpays||[]).filter(p => inY(p.date)).reduce((s,p)=>s+(p.amount||0), 0), 0);
@@ -1409,7 +1426,7 @@ const OTHK = [['rec','Дууссан ажлын авлага','гэрээний 
   ['pool','Олгоогүй удирдагчийн урамшуулал','дууссан ажлууд дээр'],
   ['stock','Агуулахад нэмэгдсэн материал','энэ онд авсан − зарсан, ажилд гаргасан өртөг'],
   ['pay','Нийлүүлэгчийн өглөг','энэ онд зээлээр авсан − төлсөн'],
-  ['sbon','Олгоогүй борлуулалтын урамшуулал',''],
+  ['sbon','Олгоогүй борлуулалтын урамшуулал','шууд зарсан, дууссан ажилд гаргасан материалын'],
   ['years','Энэ ажлуудын өөр онд орсон, гарсан','өмнөх онд авсан урьдчилгаа г.м.'],
   ['old','Өмнөх онд дууссан ажлын энэ оны гүйлгээ','хожим авсан төлбөр, хожим олгосон цалин'],
   ['rest','Тайлбаргүй үлдэгдэл','татварын төлөлтийн огноо, өөр он руу шилжсэн бичилт г.м.']];
@@ -1427,7 +1444,8 @@ function cashBreak(y, last, A, CF, r){
   const cf = inn - out;
   r = r || coYear(y);
   const prof = r.after;
-  const cash = jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j), 0);
+  const sbA = sbonActive(y);
+  const cash = jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j), 0) + sbA;
   const D = taxDue(y), unp = D.accT - D.paidT;
   const oth = cf - prof - cash - unp;
   const sg = v => (v > 0 ? '+' : (v < 0 ? '−' : ''))+fmt(Math.abs(v));
@@ -1436,7 +1454,9 @@ function cashBreak(y, last, A, CF, r){
     + '<b style="white-space:nowrap"'+(cls ? ' class="'+cls+'"' : '')+'>'+v+'</b></div>';
   let h = '<div class="calc" style="margin:10px 0 0">'
     + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(prof), prof < 0 ? 'neg' : 'pos')
-    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал', sg(cash), cash < 0 ? 'neg' : '')
+    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал'
+        + (sbA ? ' · материалын урамшуулал +'+fmt(sbA)+' (ашгаас хасагдсан)' : ''),
+        sg(cash), cash < 0 ? 'neg' : '')
     + ln('Төлөөгүй татвар', 'ногдсон '+fmt(D.accT)+' − төлсөн '+fmt(D.paidT), sg(unp))
     + ln('Бусад зөрүү', '', sg(oth))
     + (function(){
