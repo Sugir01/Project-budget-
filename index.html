@@ -367,7 +367,7 @@ function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setIt
 let expFilter = '';
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
-let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false, cfOpen = false;
+let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false, cfOpen = false, cfOpenK = false;
 let sups = [], supShadow = {};
 let openId = null, tab = 'exp', newJob = false, editContract = false, view = 'list';
 
@@ -1374,7 +1374,8 @@ const CASHK = [['inc','Ажлын орлого'],['sell','Материал бо�
   ['oh','Байгууллагын зардал'],['sup','Нийлүүлэгчид төлсөн'],['buy','Материал (бэлнээр авсан)'],
   ['mbon','Борлуулалтын урамшуулал'],['tax','Татвар төлсөн']];
 // оны мөнгөн урсгалын задаргаа (ангиллаар, сараар)
-function cashBreak(y, last, A, CF){
+// мөнгөн урсгалыг цэвэр ашиг + бэлэн мөнгө + төлөөгүй татвар + бусад зөрүүгээр задлах
+function cashBreak(y, last, A, CF, r){
   const td = today(), by = {}, mo = {};
   let inn = 0, out = 0;
   CF.forEach(f => {
@@ -1384,26 +1385,43 @@ function cashBreak(y, last, A, CF){
     const x = mo[m] = mo[m] || {i: 0, o: 0};
     if(f.a > 0){ inn += f.a; x.i += f.a; } else { out -= f.a; x.o -= f.a; }
   });
-  const ln = (l, v, cls) => '<div class="ln"><span>'+l+'</span><b'+(cls ? ' class="'+cls+'"' : '')+'>'+v+'</b></div>';
-  let h = '<div class="calc" style="margin:10px 0 0">';
-  if(A) h += ln('Оны эхний үлдэгдэл (1/1)', fmt(balAt((y-1)+'-12-31', A, CF)));
-  h += '<div class="rdate" style="margin:'+(A ? '8px' : '0')+' 0 2px;font-weight:600">Орсон</div>';
-  CASHK.filter(k => (by[k[0]]||0) > 0).forEach(k => { h += ln(k[1], '+'+fmt(by[k[0]]), 'pos'); });
-  h += '<div class="rdate" style="margin:8px 0 2px;font-weight:600">Гарсан</div>';
-  CASHK.filter(k => (by[k[0]]||0) < 0).forEach(k => { h += ln(k[1], '−'+fmt(-by[k[0]])); });
-  h += '<div class="ln tot"><span>Мөнгөн урсгал (орсон − гарсан)</span><b class="'+(inn-out<0?'neg':'pos')+'">'
-    + (inn-out > 0 ? '+' : '')+fmt(inn - out)+'</b></div>';
+  const cf = inn - out;
+  r = r || coYear(y);
+  const prof = r.after;
+  const cash = jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j), 0);
+  const D = taxDue(y), unp = D.accT - D.paidT;
+  const oth = cf - prof - cash - unp;
+  const sg = v => (v > 0 ? '+' : (v < 0 ? '−' : ''))+fmt(Math.abs(v));
+  const ln = (l, sub, v, cls) => '<div class="ln"><span>'+l
+    + (sub ? '<span class="rdate" style="display:block;margin-top:1px">'+sub+'</span>' : '')+'</span>'
+    + '<b style="white-space:nowrap"'+(cls ? ' class="'+cls+'"' : '')+'>'+v+'</b></div>';
+  let h = '<div class="calc" style="margin:10px 0 0">'
+    + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(prof), prof < 0 ? 'neg' : 'pos')
+    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал', sg(cash), cash < 0 ? 'neg' : '')
+    + ln('Төлөөгүй татвар', 'ногдсон '+fmt(D.accT)+' − төлсөн '+fmt(D.paidT), sg(unp))
+    + ln('Бусад зөрүү', 'авлага, олгоогүй цалин, агуулахын материал, өглөг, өмнөх оны гүйлгээ', sg(oth))
+    + '<div class="ln tot"><span>Мөнгөн урсгал · '+y+'</span><b class="'+(cf < 0 ? 'neg' : 'pos')+'">'+sg(cf)+'</b></div>';
   if(A){
     const end = String(y) === td.slice(0,4) ? td : y+'-12-31';
-    h += ln(String(y) === td.slice(0,4) ? 'Одоогийн үлдэгдэл' : 'Оны эцсийн үлдэгдэл', fmt(balAt(end, A, CF)));
+    h += ln('Оны эхний үлдэгдэл (1/1)', '', fmt(balAt((y-1)+'-12-31', A, CF)))
+      + ln(String(y) === td.slice(0,4) ? 'Одоогийн үлдэгдэл' : 'Оны эцсийн үлдэгдэл', '', fmt(balAt(end, A, CF)), 'pos');
   }
-  h += '</div><div class="rdate" style="margin:10px 0 4px;font-weight:600">Сараар</div>';
+  h += '</div>'
+    + '<button class="lnk" style="margin-top:8px;padding:0" onclick="cfOpenK=!cfOpenK;render()">Орсон, гарсан · сараар '
+    + (cfOpenK ? '⌃' : '›')+'</button>';
+  if(!cfOpenK) return h;
+  h += '<div class="calc" style="margin:8px 0 0">'
+    + '<div class="rdate" style="margin:0 0 2px;font-weight:600">Орсон</div>';
+  CASHK.filter(k => (by[k[0]]||0) > 0).forEach(k => { h += ln(k[1], '', '+'+fmt(by[k[0]]), 'pos'); });
+  h += '<div class="rdate" style="margin:8px 0 2px;font-weight:600">Гарсан</div>';
+  CASHK.filter(k => (by[k[0]]||0) < 0).forEach(k => { h += ln(k[1], '', '−'+fmt(-by[k[0]])); });
+  h += '<div class="ln tot"><span>Орсон − гарсан</span><b class="'+(cf < 0 ? 'neg' : 'pos')+'">'+sg(cf)+'</b></div>'
+    + '</div><div class="rdate" style="margin:10px 0 4px;font-weight:600">Сараар</div>';
   for(let i = last + 1; i >= 1; i--){
     const x = mo[i]; if(!x) continue;
     h += '<div style="padding:6px 0;border-top:1px solid #EFF2EE">'
       + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>'+i+'-р сар</span>'
-      + '<b style="white-space:nowrap;color:'+(x.i-x.o<0?'var(--bad)':'var(--good)')+'">'
-      + (x.i-x.o > 0 ? '+' : '')+fmt(x.i - x.o)+'</b></div>'
+      + '<b style="white-space:nowrap;color:'+(x.i-x.o<0?'var(--bad)':'var(--good)')+'">'+sg(x.i - x.o)+'</b></div>'
       + '<div class="rdate">орсон +'+fmt(x.i)+' · гарсан −'+fmt(x.o)+'</div></div>';
   }
   return h;
@@ -1608,7 +1626,7 @@ function cumChart(r, y, cur){
           + 'дансны үлдэгдэл оруулах</button></div>')
     + '</div>'
     + (ui.bkEdit && isAdmin() ? bankForm(A ? {bal: bal} : null) : '')
-    + (cfOpen ? cashBreak(y, last, A, CF) : '')
+    + (cfOpen ? cashBreak(y, last, A, CF, r) : '')
     + s
     + '<div style="display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px">'
     + '<span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2F6B4F;margin-right:5px"></i>ашиг</span>'
