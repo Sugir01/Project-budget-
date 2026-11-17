@@ -375,7 +375,9 @@ let lastW = '', lastT = '', lastD = '';
 let lastMatJob = '';
 try{ lastMatJob = localStorage.getItem('last-mat-job') || ''; }catch(e){}
 function setMatJob(v){ lastMatJob = v || ''; ui.mvJ = v; try{ localStorage.setItem('last-mat-job', lastMatJob); }catch(e){} }
-let expFilter = '';
+let expFilter = [];   // зардлын шүүлтүүр — олон ангилал зэрэг сонгож болно
+const efOn = k => expFilter.indexOf(k) >= 0;
+function expFT(k){ expFilter = efOn(k) ? expFilter.filter(x => x !== k) : expFilter.concat([k]); render(); }
 let heroOpen = false, jobFilter = '', openCat = false;
 let overhead = [], oshadow = {}, oCat = 'acc', cpYear = null;
 let cpOpenM = false, cpOpenD = false, txYear = null, txOpenL = false, txOpenP = false, cfOpen = false;
@@ -2959,7 +2961,7 @@ function detailView(j){
   (j.bonuses||[]).forEach(b => { if(b.expenseId) bonIds[b.expenseId] = 1; });
 
   h += '<div class="lhd"><h2>'+(isExp ? 'Зардлууд' : 'Орлогууд')+'</h2>'
-    + '<span>'+(isExp && expFilter !== 'tax' ? list.filter(e => !isAtt(e)).length : list.length)
+    + '<span>'+(isExp && !efOn('tax') ? list.filter(e => !isAtt(e)).length : list.length)
     + ' бичилт · <b>'+fmt(allTot)+'</b></span></div>';
 
   if(isExp && list.length > 0){
@@ -2972,30 +2974,32 @@ function detailView(j){
     const bv = list.filter(e => bonIds[e.id]).reduce((t,e)=>t+e.amount, 0);
     if(bv > 0) keys.push({k:'__bon', t:'Урамшуулал', c:'#8A6A1F', v:bv});
 
+    expFilter = expFilter.filter(k => keys.some(x => x.k === k));
     if(keys.length > 1){
-      if(!keys.some(x=>x.k===expFilter)) expFilter = '';
       h += '<div class="fchips">'
-        + '<button class="fchip'+(expFilter===''?' on':'')+'" onclick="expFilter=\'\';render()">Бүгд</button>'
-        + keys.map(x => '<button class="fchip'+(expFilter===x.k?' on':'')
-            + '" onclick="expFilter=\''+x.k+'\';render()"><i style="background:'+x.c+'"></i>'+x.t+'</button>').join('')
+        + '<button class="fchip'+(expFilter.length ? '' : ' on')+'" onclick="expFilter=[];render()">Бүгд</button>'
+        + keys.map(x => '<button class="fchip'+(efOn(x.k)?' on':'')+'" aria-pressed="'+efOn(x.k)+'"'
+            + ' onclick="expFT(\''+x.k+'\')"><i style="background:'+x.c+'"></i>'+x.t+'</button>').join('')
         + '</div>';
     }
-    if(expFilter){
-      list = expFilter === '__bon'
-        ? list.filter(e => bonIds[e.id])
-        : list.filter(e => catOf(e.cat).k === expFilter && !(expFilter==='wage' && bonIds[e.id]));
-      const sub = list.reduce((t,e)=>t+e.amount, 0);
-      const nm = (keys.find(x=>x.k===expFilter)||{}).t || '';
-      h += '<div class="total" style="padding:11px 13px;margin-bottom:10px">'
-        + '<span style="font-size:13.5px">'+esc(nm)+' · '+list.length+' бичилт</span>'
-        + '<b style="font-size:16px">'+fmt(sub)+'</b></div>';
+    if(expFilter.length){
+      const inK = (e, k) => k === '__bon' ? !!bonIds[e.id] : (catOf(e.cat).k === k && !(k === 'wage' && bonIds[e.id]));
+      list = list.filter(e => expFilter.some(k => inK(e, k)));
+      const sel = keys.filter(x => efOn(x.k));
+      const sub = sel.reduce((t,x)=>t+x.v, 0);
+      h += '<div class="total" style="padding:11px 13px;margin-bottom:10px;align-items:flex-start">'
+        + '<span style="font-size:13.5px;min-width:0">'+sel.map(x => esc(x.t)).join(' + ')+' · '
+        + list.filter(e => !isAtt(e) || efOn('tax')).length+' бичилт'
+        + (sel.length > 1 ? '<span class="rdate" style="display:block;margin-top:2px">'
+            + sel.map(x => esc(x.t)+' '+fmt(x.v)).join(' · ')+'</span>' : '')+'</span>'
+        + '<b style="font-size:16px;white-space:nowrap">'+fmt(sub)+'</b></div>';
     }
   }
 
-  if(isExp && expFilter !== 'tax') list = list.filter(e => !isAtt(e));
+  if(isExp && !efOn('tax')) list = list.filter(e => !isAtt(e));
   if(list.length===0){
     h += '<div class="note">'+(isExp
-      ? (expFilter ? 'Энэ ангилалд бичилт алга.' : 'Одоогоор зардал бүртгээгүй байна.')
+      ? (expFilter.length ? 'Энэ ангилалд бичилт алга.' : 'Одоогоор зардал бүртгээгүй байна.')
       : 'Одоогоор орлого бүртгээгүй байна.')+'</div>';
   } else {
     h += '<div class="lrows">';
@@ -3012,7 +3016,7 @@ function detailView(j){
         + '<div class="mt">'+(isExp ? (isBon ? 'Урамшуулал' : c.t)+' · ' : '')+shortDate(it.date)
         + (it.by ? ' · '+esc(shortBy(it.by)) : '')+'</div></div>'
         + '<span class="am">'+(isExp ? '−' : '+')+fmt(it.amount)
-        + (isExp && tAt[it.id] && expFilter !== 'tax' ? '<span class="amtx">+'+fmt(tAt[it.id].amount)+'</span>' : '')
+        + (isExp && tAt[it.id] && !efOn('tax') ? '<span class="amtx">+'+fmt(tAt[it.id].amount)+'</span>' : '')
         + '</span>'
         + (isExp && it.auto === 'vat'
             ? '<span style="width:40px;flex:none"></span>'
@@ -4716,7 +4720,7 @@ function toggleDone(){
 }
 
 function openJob(id){ openId=id; tab='sum'; editContract=false; ui={}; pickOpen=false;
-  lastW=''; lastT=''; lastD=''; openW=false; openM=false; openB=false; bonPick={}; expFilter=''; render(); }
+  lastW=''; lastT=''; lastD=''; openW=false; openM=false; openB=false; bonPick={}; expFilter=[]; render(); }
 
 function addJob(){
   const name = document.getElementById('nName').value.trim();
