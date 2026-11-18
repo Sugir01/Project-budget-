@@ -4294,8 +4294,15 @@ function teamCard(tk, ST){
       + '</span></div>';
   });
   h += '</div>';
-  // хувиар орсон ажлууд
-  const TJ = jobs.filter(j => j.team === tk);
+  // хувиар орсон ажлууд — дууссан, бүрэн олгосон ажил харагдахгүй
+  const TJ = jobs.filter(j => {
+    if(j.team !== tk) return false;
+    if(!j.done) return true;
+    const c = bonusCalc(j);
+    const left = c.tms.reduce((t,w)=>t+(c.shares[w.id]||0), 0);
+    const paid = c.tms.reduce((t,w)=>t+paidProfit(j, w.id), 0);
+    return !(paid > 0 && left < 1);
+  });
   if(TJ.length){
     h += '<div class="mlabel" style="margin:12px 0 4px">Хувиар орсон ажлууд</div>';
     TJ.forEach(j => {
