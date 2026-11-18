@@ -4010,6 +4010,80 @@ function saveAdv(rid){
   saveRoster(); ui = {}; render();
 }
 
+// ---------- багийн урьдчилгаа ----------
+// нийт дүнг гишүүдэд хувааж, гишүүн бүрийн урьдчилгааны бүртгэлд (r.advs) оруулна.
+// Бөөнд олгох, хувийн олголтын үед автоматаар суутгагдана.
+function tAdvWeight(r){
+  // ногдох дүн: олгоогүй цалин + (дууссан, дуусаагүй) хувиар ногдох дүн
+  return rosterJobs(r).reduce((t,x) => t + x.due + x.bon + (x.est||0), 0);
+}
+function openTAdv(tk){ ui = {tAdv: tk, taM: 'pay'}; render(); }
+function taSplit(){
+  const tot = num((document.getElementById('taTot')||{}).value || '') || 0;
+  const els = [...document.querySelectorAll('.taIn')];
+  if(!els.length) return;
+  let W = els.map(e => parseFloat(e.getAttribute('data-w')) || 0);
+  if(!(W.reduce((a,b)=>a+b, 0) > 0)) W = W.map(() => 1);
+  const sw = W.reduce((a,b)=>a+b, 0);
+  let left = Math.round(tot);
+  els.forEach((e, i) => {
+    const v = i === els.length - 1 ? left : Math.round(tot * W[i] / sw / 1000) * 1000;
+    left -= v;
+    e.value = v > 0 ? group(String(v)) : '';
+  });
+  taSum();
+}
+function taSum(){
+  const s = [...document.querySelectorAll('.taIn')].reduce((t,e) => t + (num(e.value) || 0), 0);
+  const el = document.getElementById('taSumV'); if(el) el.textContent = fmt(s);
+}
+function teamAdvBox(tk){
+  const mem = teamMembers(tk), m = ui.taM || 'pay';
+  const q = teamQ(tk);
+  const wt = r => m === 'eq' ? 1 : tAdvWeight(r);
+  const tot = ui.taTot || '';
+  let h = '<div class="inf" style="margin-top:10px">'
+    + '<div style="font-weight:700">Багт урьдчилгаа өгөх</div>'
+    + '<div class="rdate" style="margin:2px 0 8px">Нийт дүнг гишүүдэд хуваана. Гишүүн бүрийн дараагийн цалин, '
+    + 'багийн хөлснөөс автоматаар суутгагдана.</div>'
+    + '<div style="display:flex;gap:10px">'
+    + '<div style="flex:1.2;min-width:0"><label class="fl" for="taTot">Нийт дүн (₮)</label>'
+    + '<input id="taTot" inputmode="numeric" placeholder="0" value="'+esc(tot)+'" oninput="liveNum(this);taSplit()"></div>'
+    + '<div style="flex:1;min-width:0"><label class="fl" for="taDate">Огноо</label>'
+    + '<input id="taDate" type="date" value="'+(ui.taDate || today())+'"></div></div>'
+    + '<div class="fl">Хуваах</div><div class="chips">'
+    + [['pay','Ногдох дүнгээр'],['eq','Тэнцүү']].map(x => '<button class="chip'+(x[0] === m ? ' on' : '')+'" '
+        + 'onclick="ui.taTot=document.getElementById(\'taTot\').value;ui.taDate=document.getElementById(\'taDate\').value;'
+        + 'ui.taM=\''+x[0]+'\';render();taSplit()">'+x[1]+'</button>').join('')
+    + '</div>';
+  mem.forEach(r => {
+    const w = tAdvWeight(r), a = advBal(r);
+    h += '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid #EFF2EE">'
+      + '<span style="flex:1;min-width:0;font-size:14.5px">'+esc(r.name)
+      + '<span class="rdate" style="display:block">ногдох '+fmt(Math.round(w))+(a > 0 ? ' · урьдчилгаа '+fmt(a) : '')+'</span></span>'
+      + '<input class="taIn" data-rid="'+r.id+'" data-w="'+wt(r)+'" inputmode="numeric" placeholder="0" '
+      + 'style="width:120px;text-align:right;margin:0" oninput="liveNum(this);taSum()"></div>';
+  });
+  h += '<div class="ln" style="display:flex;justify-content:space-between;padding:8px 0 0;font-weight:700;border-top:1px solid #EFF2EE">'
+    + '<span>Нийт</span><b id="taSumV">'+fmt(0)+'</b></div>'
+    + '<input id="taNote" placeholder="Тэмдэглэл (жишээ: Дэнж ПС, хоолны мөнгө)" style="margin-top:8px">'
+    + (m === 'pay' ? '<div class="rdate" style="margin-top:6px">Ногдох дүн = олгоогүй цалин + багийн хөлс, урамшуулал (дуусаагүй ажлынх урьдчилсан). '
+        + 'Гишүүн бүрийн дүнг гараар засаж болно.</div>' : '')
+    + '<div class="btns"><button class="btn" onclick="saveTeamAdv(\''+q+'\')">Хадгалах</button>'
+    + '<button class="btn ghost" onclick="ui={};render()">Болих</button></div></div>';
+  return h;
+}
+function saveTeamAdv(tk){
+  if(!isAdmin()) return;
+  const dt = (document.getElementById('taDate')||{}).value || today();
+  const note = ((document.getElementById('taNote')||{}).value || '').trim();
+  const L = [...document.querySelectorAll('.taIn')].map(e => ({r: roster.find(x => x.id === e.getAttribute('data-rid')),
+    a: Math.round(num(e.value) || 0)})).filter(x => x.r && x.a > 0);
+  if(!L.length){ alert('Дүнгээ оруулна уу.'); return; }
+  L.forEach(x => addAdvEntry(x.r, 'give', x.a, dt, note ? tk+' · '+note : tk));
+  saveRoster(); ui = {}; render();
+}
+
 // ---------- баг ----------
 // баг = ажилтны r.team талбар (нэг хүн нэг багт)
 function payWageRow(x, amt, dt, rcpt, sfx){
@@ -4187,11 +4261,18 @@ function teamCard(tk, ST){
     + '</div>';
   if(isAdmin() && ui.tMenu === tk){
     h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;padding:10px;background:#F2F5F1;border-radius:10px">'
+      + '<button class="small" onclick="openTAdv(\''+q+'\')">Урьдчилгаа</button>'
       + '<button class="small" onclick="ui={tForm:\''+q+'\'};render()">Засах</button>'
       + '<button class="small warn" onclick="dissolveTeam(\''+q+'\')">Багийг задлах</button></div>';
   }
   const got = mem.reduce((t,r) => { const p = memberPaid(r); return t + p.wa + p.ba; }, 0);
   const tjDone = jobs.some(j => j.team === tk && j.done);
+  const TA = isAdmin() ? mem.reduce((t,r) => t + advBal(r), 0) : 0;
+  if(TA > 0 && ui.tAdv !== tk){
+    h += '<button class="advl" onclick="openTAdv(\''+q+'\')"><span>Урьдчилгаа · '
+      + mem.filter(r => advBal(r) > 0).length+' гишүүнд, олголтоос суутгана</span><b>'+fmt(TA)+' ›</b></button>';
+  }
+  if(isAdmin() && ui.tAdv === tk) h += teamAdvBox(tk);
   h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-top:10px">'
     + '<div><div class="mlabel">Багийн олгох цалин</div>'
     + '<div style="font-size:20px;font-weight:700;margin-top:2px;color:'+(due>0?'var(--bad)':'var(--good)')+'">'+fmt(due)+'</div></div>'
