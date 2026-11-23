@@ -1460,13 +1460,16 @@ function cfParts(y, r){
   r = r || coYear(y);
   const D = taxDue(y);
   const SX = stockExpIds();
-  const cash = cur ? jobs.filter(j => !j.done).reduce((t,j) => t + earned(j) - spent(j)
-      + (j.expenses||[]).filter(e => SX[e.id]).reduce((u,e)=>u+(e.amount||0), 0), 0)
-    : cashAt(y+'-12-31', SX);
+  // идэвхтэй ажлууд: орлого − зардал (нүүрний "Бэлэн мөнгө") + агуулахаас гаргасан материал буцааж
+  // (тэр материалын мөнгө худалдан авалтын мөрөөр аль хэдийн хасагдсан)
+  const AJ = jobs.filter(j => !j.done);
+  const cashJob = cur ? AJ.reduce((t,j) => t + earned(j) - spent(j), 0) : 0;
+  const cashMat = cur ? AJ.reduce((t,j) => t + (j.expenses||[]).filter(e => SX[e.id]).reduce((u,e)=>u+(e.amount||0), 0), 0) : 0;
+  const cash = cur ? cashJob + cashMat : cashAt(y+'-12-31', SX);
   const unp = D.accT - D.paidT;
   const M = matCashAt(y, cur ? today() : y+'-12-31');
   const adv = advOutAt(cur ? today() : y+'-12-31');
-  return {prof: r.after, cash: cash, unp: unp, acc: D.accT, paid: D.paidT, mPaid: M.paid, mCogs: M.cogs, adv: adv,
+  return {prof: r.after, cash: cash, cashJob: cashJob, cashMat: cashMat, unp: unp, acc: D.accT, paid: D.paidT, mPaid: M.paid, mCogs: M.cogs, adv: adv,
           total: r.after + cash + unp - M.paid + M.cogs - adv};
 }
 function cashBreak(y, r){
@@ -1477,7 +1480,10 @@ function cashBreak(y, r){
     + '<b style="white-space:nowrap"'+(cls ? ' class="'+cls+'"' : '')+'>'+v+'</b></div>';
   return '<div class="calc" style="margin:10px 0 0">'
     + ln('Цэвэр ашиг', 'татварын дараа · дууссан ажил, материал, байгууллагын зардал', sg(p.prof), p.prof < 0 ? 'neg' : 'pos')
-    + ln('Бэлэн мөнгө', 'идэвхтэй ажлуудын орлого − зардал · агуулахаас гаргасан материалгүй', sg(p.cash), p.cash < 0 ? 'neg' : '')
+    + ln('Бэлэн мөнгө', p.cashMat > 0
+        ? 'идэвхтэй ажлууд дээр '+fmt(p.cashJob)+' + агуулахаас гаргасан материал '+fmt(p.cashMat)
+          + ' (мөнгө нь доорх худалдан авалтаар хасагдсан)'
+        : 'идэвхтэй ажлуудын орлого − зардал', sg(p.cash), p.cash < 0 ? 'neg' : '')
     + ln('Төлөөгүй татвар', 'ногдсон '+fmt(p.acc)+' − төлсөн '+fmt(p.paid), sg(p.unp))
     + (p.mPaid ? ln('Материал худалдан авалт', y+' онд бэлнээр авсан, нийлүүлэгчид төлсөн', sg(-p.mPaid), 'neg') : '')
     + (p.mCogs ? ln('Зарсан, дууссан ажилд гаргасан материалын өртөг', 'ашигт хасагдсан тул буцааж нэмнэ', sg(p.mCogs)) : '')
