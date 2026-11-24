@@ -425,7 +425,7 @@ function clean(v){
 }
 
 const LISTS = ['expenses','incomes','labor','workers','wagePays','bonuses','plan','stops'];
-const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct','startDate','endDate','taxPct','vat','team','teamPct'];
+const FIELDS = ['name','contract','type','progress','done','doneDate','members','owner','createdAt','createdBy','coPct','startDate','endDate','taxPct','vat','team','teamPct','teamAmt'];
 
 let me = null, admin = null, booted = false, syncErr = '', pendingRender = false;
 const isAdmin = () => !!me && me === admin;
@@ -4362,16 +4362,16 @@ function teamCard(tk, ST){
     return !(paid > 0 && left < 1);
   });
   if(TJ.length){
-    h += '<div class="mlabel" style="margin:12px 0 4px">Хувиар орсон ажлууд</div>';
+    h += '<div class="mlabel" style="margin:12px 0 4px">Хувь, дүнгээр орсон ажлууд</div>';
     TJ.forEach(j => {
       const c = bonusCalc(j);
-      const tE = Math.round(c.tms.reduce((t,w)=>t+(c.entOf[w.id]||0), 0));
+      const tE = c.tFix ? c.tAmt : Math.round(c.tms.reduce((t,w)=>t+(c.entOf[w.id]||0), 0));
       const tPaid = c.tms.reduce((t,w)=>t+paidProfit(j, w.id), 0);
       h += '<div style="padding:8px 10px;margin-top:6px;background:#F5F3FA;border-radius:10px">'
         + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">'
         + '<span style="font-size:14.5px;font-weight:600;min-width:0">'+esc(j.name)+'</span>'
         + '<b style="white-space:nowrap;color:#5B4A86">'+fmt(tE)+'</b></div>'
-        + '<div class="rdate">баг '+(j.teamPct||0)+'% · '+nd(c.tDays)+' хүн өдөр'
+        + '<div class="rdate">'+(c.tFix ? 'тогтмол дүн' : 'баг '+(j.teamPct||0)+'%')+' · '+nd(c.tDays)+' хүн өдөр'
         + (c.tDays > 0 ? ' · 1 хүн өдөр '+fmt(Math.round(tE / c.tDays)) : '')
         + (j.done ? (tPaid >= tE && tE > 0 ? ' · олгосон ✓' : ' · дууссан, олгоно') : ' · урьдчилсан, ажил дуусахад олгоно')+'</div>';
       c.tms.filter(w => wkDays(j, w.id) > 0).forEach(w => {
@@ -5292,10 +5292,15 @@ const paidProfit = (j,wid) => (j.bonuses||[])
 function bonusCalc(j, Wall, extra){
   const W = Wall || j.workers || [];
   const leads = W.filter(w => w.lead);
-  const tms = j.team ? W.filter(w => w.tm && !w.lead) : [];   // хувиар ажилладаг багийн гишүүд
-  const holders = leads.concat(tms);
+  const tms = j.team ? W.filter(w => w.tm && !w.lead) : [];   // хувиар/дүнгээр ажилладаг багийн гишүүд
+  // баг тогтмол дүнгээр: тохирсон дүн ажлын зардал болно (олгосон нь зардалд орсон, үлдсэн нь хүлээгдэж буй)
+  const tFix = !!(j.team && typeof j.teamAmt === 'number');
+  const tAmt = tFix ? Math.max(0, j.teamAmt || 0) : 0;
+  const tFixPaid = tFix ? tms.reduce((t,w)=>t+paidProfit(j, w.id), 0) : 0;
+  const tFixDue = Math.max(0, tAmt - tFixPaid);
+  const holders = tFix ? leads.slice() : leads.concat(tms);
   const pct = j.coPct || 0;
-  const cost = spent(j) + wageDue(j) + (extra || 0);
+  const cost = spent(j) + wageDue(j) + tFixDue + (extra || 0);
   const gross = j.contract - cost;
   const coShare = j.contract * pct / 100;
   const pool = gross - coShare;                       // одоо үлдсэн сан
@@ -5304,19 +5309,19 @@ function bonusCalc(j, Wall, extra){
   // хуваарилалт: баг — багийн % -ийг гишүүдэд өдрөөр; хувьтай удирдагч — тогтмол %;
   // хувьгүй удирдагчид — үлдсэн % -ийг өдрөөр (хуучин журам)
   const tDays = tms.reduce((t,w)=>t+wkDays(j, w.id), 0);
-  const tPct = (tms.length && tDays > 0) ? (j.teamPct || 0) : 0;
+  const tPct = (!tFix && tms.length && tDays > 0) ? (j.teamPct || 0) : 0;
   const fixL = leads.filter(w => w.pct > 0);
   const fixPct = fixL.reduce((t,w)=>t+w.pct, 0);
   const freeL = leads.filter(w => !(w.pct > 0) && wkDays(j, w.id) > 0);
   const freeDays = freeL.reduce((t,w)=>t+wkDays(j, w.id), 0);
-  const restPct = Math.max(0, 100 - (j.team ? (j.teamPct||0) : 0) - fixPct);
+  const restPct = Math.max(0, 100 - ((j.team && !tFix) ? (j.teamPct||0) : 0) - fixPct);
   const entOf = {};
-  tms.forEach(w => { entOf[w.id] = tDays > 0 ? grossPool * tPct / 100 * wkDays(j, w.id) / tDays : 0; });
+  tms.forEach(w => { entOf[w.id] = tDays > 0 ? (tFix ? tAmt : grossPool * tPct / 100) * wkDays(j, w.id) / tDays : 0; });
   fixL.forEach(w => { entOf[w.id] = grossPool * w.pct / 100; });
   freeL.forEach(w => { entOf[w.id] = freeDays > 0 ? grossPool * restPct / 100 * wkDays(j, w.id) / freeDays : 0; });
   const f = Math.min(1, (tPct + fixPct + (freeDays > 0 ? restPct : 0)) / 100);
   const active = holders.filter(w => entOf[w.id] > 0);
-  const totalDays = holders.reduce((t,w)=>t+wkDays(j, w.id), 0);
+  const totalDays = holders.concat(tFix ? tms : []).reduce((t,w)=>t+wkDays(j, w.id), 0);
 
   // ногдох дүн = бүтэн сангаас хувьчилсан дүн хасах өмнө авсан
   const shares = {};
@@ -5329,17 +5334,21 @@ function bonusCalc(j, Wall, extra){
   const cap = Math.max(0, pool);
   const k = (want > cap && want > 0) ? cap / want : 1;
   active.forEach(w => { shares[w.id] = Math.round(shares[w.id] * k); });
+  // тогтмол дүнтэй багийн гишүүд — сангаас хамаарахгүй, тохирсон дүнгээ авна
+  if(tFix) tms.forEach(w => { if(entOf[w.id] > 0) shares[w.id] = Math.max(0, Math.round(entOf[w.id] - paidProfit(j, w.id))); });
 
   const picked = active.filter(w => shares[w.id] > 0);
   const paidL = leads.filter(w => paidProfit(j, w.id) > 0 && !(shares[w.id] > 0));
   return {pct, cost, gross, coShare, pool, grossPool, paidTot, shares, entOf, f,
-          leads, tms, tDays, tPct, fixPct, restPct, freeL, paidL, picked, totalDays};
+          leads, tms, tDays, tPct, fixPct, restPct, freeL, paidL, picked, totalDays,
+          tFix, tAmt, tFixPaid, tFixDue};
 }
 const isHolder = (j, w) => !!(w && (w.lead || (j.team && w.tm)));
 
 // нэг удирдагчид ногдох ашгийн урамшуулал
 function leadShare(j, wid, extra){
   const c = bonusCalc(j, j.workers||[], extra);
+  if(c.tFix && c.tms.some(w => w.id === wid)) return c.shares[wid] || 0;
   if(c.pool <= 0) return 0;
   return c.shares[wid] || 0;
 }
@@ -5365,6 +5374,7 @@ function bonusBox(j, W){
     + '<div class="ln"><span>Гэрээний дүн</span><b>'+fmt(j.contract)+'</b></div>'
     + '<div class="ln"><span>Нийт зардал</span><b>\u2212'+fmt(spent(j))+'</b></div>'
     + (wageDue(j) > 0 ? '<div class="ln"><span>Олгоогүй цалин</span><b>\u2212'+fmt(wageDue(j))+'</b></div>' : '')
+    + (c.tFixDue > 0 ? '<div class="ln"><span>Багийн тогтмол дүн'+(c.tFixPaid > 0 ? ' (олгоогүй)' : '')+'</span><b>\u2212'+fmt(c.tFixDue)+'</b></div>' : '')
     + '<div class="ln"><span>Үлдэх ашиг</span><b class="'+(c.gross<0?'neg':'pos')+'">'+fmt(c.gross)+'</b></div>'
     + '<div class="ln"><span>Компанийн ашиг ('+c.pct+'%)</span><b>\u2212'+fmt(c.coShare)+'</b></div>'
     + '<div class="ln tot"><span>Хуваарилах сан</span>'
@@ -5424,20 +5434,31 @@ function bonusBox(j, W){
 // баг, удирдагчийн хувь тохируулах
 function shareSetup(j, c){
   const TK = teamNames();
-  const tp = j.team ? (j.teamPct||0) : 0;
+  const fx = !!(j.team && typeof j.teamAmt === 'number');
+  const tp = (j.team && !fx) ? (j.teamPct||0) : 0;
   const lp = c.leads.reduce((t,w)=>t+(w.pct||0), 0);
   const sum = tp + lp;
   let h = '<div class="mlabel" style="margin:10px 0 6px">Сангийн хуваарилалт (100%)</div>'
     + '<div style="display:flex;gap:8px;align-items:center">'
     + '<select class="wsel" style="flex:1;min-width:0;margin:0" onchange="setJobTeam(this.value)">'
-    + '<option value="">— Баг хувиар оруулахгүй —</option>'
+    + '<option value="">— Баг оруулахгүй —</option>'
     + TK.map(t => '<option value="'+esc(t)+'"'+(j.team === t ? ' selected' : '')+'>'+esc(t)+'</option>').join('')
     + '</select>'
-    + (j.team ? '<input inputmode="numeric" style="width:64px;text-align:right" value="'+tp+'" onchange="setTeamPct(this.value)"><b>%</b>' : '')
+    + (j.team && !fx ? '<input inputmode="numeric" style="width:64px;text-align:right" value="'+tp+'" onchange="setTeamPct(this.value)"><b>%</b>' : '')
     + '</div>';
   if(j.team){
+    h += '<div style="display:flex;gap:8px;align-items:center;margin-top:8px">'
+      + '<div class="chips" style="margin:0;flex:none">'
+      + '<button class="chip'+(fx ? '' : ' on')+'" onclick="setTeamMode(\'pct\')">Хувиар</button>'
+      + '<button class="chip'+(fx ? ' on' : '')+'" onclick="setTeamMode(\'amt\')">Тогтмол дүн</button></div>'
+      + '</div>'
+      + (fx ? '<div style="display:flex;gap:8px;align-items:center;margin-top:8px">'
+          + '<span style="flex:1;min-width:0;font-size:14px">Багт олгох дүн</span>'
+          + '<input inputmode="numeric" placeholder="0" style="width:150px;text-align:right;margin:0" value="'
+          + (j.teamAmt > 0 ? group(String(j.teamAmt)) : '')+'" oninput="liveNum(this)" onchange="setTeamAmt(this.value)"><b>₮</b></div>' : '');
     const miss = teamMembers(j.team).filter(r => !(j.workers||[]).some(w => w.rid === r.id || w.name === r.name));
-    h += '<div class="rdate" style="margin-top:4px">Багийн гишүүдэд өдрийн цалин бодогдохгүй — багийн хувийг ажилласан өдрөөр нь хуваана.'
+    h += '<div class="rdate" style="margin-top:4px">Багийн гишүүдэд өдрийн цалин бодогдохгүй — багийн '
+      + (fx ? 'тогтмол дүнг (ажлын зардалд, компанийн хувиас өмнө тооцно)' : 'хувийг')+' ажилласан өдрөөр нь хуваана.'
       + (miss.length ? ' <button class="lnk" style="padding:0" onclick="setJobTeam(\''+esc(j.team).replace(/'/g, "\\'")+'\')">'
           + miss.length+' гишүүнийг ажилд нэмэх</button>' : '')+'</div>';
   }
@@ -5448,20 +5469,35 @@ function shareSetup(j, c){
       + '<input inputmode="numeric" placeholder="—" style="width:64px;text-align:right" value="'+(w.pct||'')+'"'
       + ' onchange="setLeadPct(\''+w.id+'\', this.value)"><b>%</b></div>';
   });
-  if(j.team || lp){
+  if((j.team && !fx) || lp){
     const free = c.leads.some(w => !(w.pct > 0));
+    const tON = j.team && !fx;
     h += '<div class="'+(sum > 100 ? 'warn' : 'rdate')+'" style="margin:8px 0 10px">'
-      + (j.team ? 'Баг '+tp+'%' : '') + (lp ? (j.team ? ' + ' : '')+'удирдагч '+lp+'%' : '')+' = '+sum+'%'
+      + (fx ? 'Сангаас: ' : '')
+      + (tON ? 'Баг '+tp+'%' : '') + (lp ? (tON ? ' + ' : '')+'удирдагч '+lp+'%' : '')+' = '+sum+'%'
       + (sum > 100 ? ' — 100%-иас хэтэрсэн байна.'
          : sum < 100 ? (free ? ' · үлдсэн '+(100-sum)+'% хувьгүй удирдагчдад өдрөөр.' : ' · үлдсэн '+(100-sum)+'% компанид үлдэнэ.') : '')
       + '</div>';
+  } else if(fx){
+    h += '<div class="rdate" style="margin:8px 0 10px">Хуваарилах сан '+(c.leads.length ? 'удирдагчдад өдрөөр' : 'компанид үлдэнэ')+'.</div>';
   }
   return h;
+}
+function setTeamMode(m){
+  const j = jobs.find(x=>x.id===openId); if(!j || !isAdmin()) return;
+  if(m === 'amt'){ if(typeof j.teamAmt !== 'number') j.teamAmt = 0; }
+  else delete j.teamAmt;
+  save(); render();
+}
+function setTeamAmt(v){
+  const j = jobs.find(x=>x.id===openId); if(!j || !isAdmin()) return;
+  j.teamAmt = Math.max(0, Math.round(num(String(v)) || 0));
+  save(); render();
 }
 function setJobTeam(tk){
   const j = jobs.find(x=>x.id===openId); if(!j || !isAdmin()) return;
   (j.workers||[]).forEach(w => { delete w.tm; });
-  if(!tk){ delete j.team; delete j.teamPct; save(); render(); return; }
+  if(!tk){ delete j.team; delete j.teamPct; delete j.teamAmt; save(); render(); return; }
   j.team = tk;
   if(typeof j.teamPct !== 'number') j.teamPct = Math.max(0, 100 - (j.workers||[]).filter(w=>w.lead).reduce((t,w)=>t+(w.pct||0),0)) || 70;
   teamMembers(tk).forEach(r => {
